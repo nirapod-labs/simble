@@ -8,7 +8,7 @@ let package = Package(
   name: "SimBLEProtocol",
   platforms: [.macOS(.v13)],
   products: [
-    .library(name: "SimBLEProtocol", targets: ["SimBLEProtocol"])
+    .library(name: "SimBLEProtocol", targets: ["SimBLEProtocol"]),
   ],
   targets: [
     .target(name: "SimBLEProtocol"),
