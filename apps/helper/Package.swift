@@ -25,8 +25,18 @@ let package = Package(
     ),
     .executableTarget(
       name: "simble-helper",
-      dependencies: ["SimBLEHelperKit"]
+      dependencies: [
+        "SimBLEHelperKit",
+        .product(name: "SimBLEHostCore", package: "host-core"),
+      ]
     ),
-    .testTarget(name: "SimBLEHelperKitTests", dependencies: ["SimBLEHelperKit"]),
+    .testTarget(
+      name: "SimBLEHelperKitTests",
+      dependencies: [
+        "SimBLEHelperKit",
+        .product(name: "SimBLEHostCore", package: "host-core"),
+        .product(name: "SimBLEProtocol", package: "swift"),
+      ]
+    ),
   ]
 )

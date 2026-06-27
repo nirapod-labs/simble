@@ -10,8 +10,19 @@ let package = Package(
   products: [
     .library(name: "SimBLEHostCore", targets: ["SimBLEHostCore"])
   ],
+  dependencies: [
+    .package(path: "../protocol/swift"),
+  ],
   targets: [
-    .target(name: "SimBLEHostCore"),
-    .testTarget(name: "SimBLEHostCoreTests", dependencies: ["SimBLEHostCore"]),
+    .target(
+      name: "SimBLEHostCore",
+      dependencies: [
+        .product(name: "SimBLEProtocol", package: "swift"),
+      ]
+    ),
+    .testTarget(
+      name: "SimBLEHostCoreTests",
+      dependencies: ["SimBLEHostCore"]
+    ),
   ]
 )

@@ -228,6 +228,51 @@ public enum Wire {
   /// The protocol version this codec implements.
   public static let version1: UInt64 = 1
 
+  /// `CBManagerState.poweredOn` raw value, the one state in which scanning or
+  /// connecting proceeds. Carried in `managerState` (key 41) and used by the host
+  /// to report central support.
+  public static let managerStatePoweredOn: UInt64 = 5
+
+  /// The wire op a request carries in key 0, so a failure response can echo it and
+  /// the client correlate the reply. Each command op pairs with its response.
+  public static func op(of request: Request) -> UInt64 {
+    switch request {
+    case .hello: return opHello
+    case .centralState: return opCentralState
+    case .scanStart: return opScanStart
+    case .scanStop: return opScanStop
+    case .connect: return opConnect
+    case .disconnect: return opDisconnect
+    case .discoverServices: return opDiscoverServices
+    case .discoverCharacteristics: return opDiscoverCharacteristics
+    case .readCharacteristic: return opReadCharacteristic
+    case .writeCharacteristic: return opWriteCharacteristic
+    case .setNotify: return opSetNotify
+    case .readRSSI: return opReadRSSI
+    case .peripheralState: return opPeripheralState
+    case .addService: return opAddService
+    case .removeService: return opRemoveService
+    case .startAdvertising: return opStartAdvertising
+    case .stopAdvertising: return opStopAdvertising
+    case .respondRead: return opRespondRead
+    case .respondWrite: return opRespondWrite
+    case .updateValue: return opUpdateValue
+    }
+  }
+
+  /// Whether `request` is a peripheral-role operation, the ops the central bridge
+  /// rejects with a not-implemented failure in this version (`addService` through
+  /// `updateValue`).
+  public static func isPeripheralRole(_ request: Request) -> Bool {
+    switch request {
+    case .addService, .removeService, .startAdvertising, .stopAdvertising,
+         .respondRead, .respondWrite, .updateValue:
+      return true
+    default:
+      return false
+    }
+  }
+
   // Shared keys, reused from the SimEnclave wire so a reader of both protocols sees the same
   // numbers for op, status, error, token, version, errorCode, appId, and appDisplayName.
   static let keyOp: UInt64 = 0
