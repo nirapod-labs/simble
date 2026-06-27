@@ -235,6 +235,38 @@ int simble_encode_scan_start(const uint8_t *token, size_t token_len, const char 
   return w.overflow ? -1 : (int)w.pos;
 }
 
+int simble_encode_discover_services(const uint8_t *token, size_t token_len,
+                                    const uint8_t *peripheral_id, size_t peripheral_len,
+                                    const char *const *uuids, const size_t *uuid_lens,
+                                    size_t uuid_count, uint8_t *out, size_t cap) {
+  int has_filter = uuids && uuid_count > 0;
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 3 + has_filter);
+  w_kv_uint(&w, K_OP, OP_DISCOVER_SERVICES);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  w_kv_bytes(&w, K_PERIPHERAL, peripheral_id, peripheral_len);
+  if (has_filter)
+    w_kv_text_array(&w, K_SERVICE_UUIDS, uuids, uuid_lens, uuid_count);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
+int simble_encode_discover_characteristics(const uint8_t *token, size_t token_len,
+                                           const uint8_t *peripheral_id, size_t peripheral_len,
+                                           const char *service, size_t service_len,
+                                           const char *const *uuids, const size_t *uuid_lens,
+                                           size_t uuid_count, uint8_t *out, size_t cap) {
+  int has_filter = uuids && uuid_count > 0;
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 4 + has_filter);
+  w_kv_uint(&w, K_OP, OP_DISCOVER_CHARACTERISTICS);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  w_kv_bytes(&w, K_PERIPHERAL, peripheral_id, peripheral_len);
+  w_kv_text(&w, K_SERVICE, service, service_len);
+  if (has_filter)
+    w_kv_text_array(&w, K_CHARACTERISTIC_UUIDS, uuids, uuid_lens, uuid_count);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
 int simble_encode_read_characteristic(const uint8_t *token, size_t token_len,
                                       const uint8_t *peripheral_id, size_t peripheral_len,
                                       const char *service, size_t service_len,
@@ -470,6 +502,37 @@ static simble_status copy_text(const entry *e, char *dst, size_t cap) {
   return SIMBLE_OK;
 }
 
+// Copy an array of text strings into fixed NUL-terminated UUID buffers. The entry's span covers the
+// array's encoded elements (recorded by r_map) and its uintval is the element count; this re-walks
+// the span as text strings. An array longer than SIMBLE_MAX_UUIDS or a UUID longer than its buffer
+// fails with SIMBLE_ERR_BUFFER. The discover responses carry the discovered UUIDs this way.
+static simble_status copy_text_array(const entry *e, char uuids[][SIMBLE_UUID_CAP], size_t cap,
+                                     size_t *out_count) {
+  if (!e || e->major != CBOR_ARRAY)
+    return SIMBLE_ERR_MISSING;
+  if (e->uintval > cap)
+    return SIMBLE_ERR_BUFFER;
+  reader r = {e->span, e->span_len, 0};
+  for (uint64_t i = 0; i < e->uintval; i++) {
+    uint8_t m;
+    uint64_t a;
+    simble_status st = r_head(&r, &m, &a);
+    if (st != SIMBLE_OK)
+      return st;
+    if (m != CBOR_TEXT)
+      return SIMBLE_ERR_TYPE;
+    if (a > r.len - r.off)
+      return SIMBLE_ERR_TRUNCATED;
+    if (a >= SIMBLE_UUID_CAP)
+      return SIMBLE_ERR_BUFFER;
+    memcpy(uuids[i], r.p + r.off, (size_t)a);
+    uuids[i][a] = '\0';
+    r.off += (size_t)a;
+  }
+  *out_count = (size_t)e->uintval;
+  return SIMBLE_OK;
+}
+
 // Read a bounded signed code from an int entry (key 10 / RSSI / TX power). An out-of-range or
 // missing value yields 0 and clears the presence flag, so a hostile code never traps.
 static int64_t read_int(const entry *e, int *present) {
@@ -607,10 +670,30 @@ simble_status simble_decode_response(const uint8_t *payload, size_t len, simble_
     out->notify = flag->uintval != 0 ? 1 : 0;
     return SIMBLE_OK;
   }
+  case OP_DISCOVER_SERVICES: {
+    out->kind = SIMBLE_RESP_SERVICES_DISCOVERED;
+    st = copy_bytes(find(entries, count, K_PERIPHERAL), out->peripheral, sizeof(out->peripheral),
+                    &out->peripheral_len);
+    if (st != SIMBLE_OK)
+      return st;
+    return copy_text_array(find(entries, count, K_SERVICE_UUIDS), out->uuids, SIMBLE_MAX_UUIDS,
+                           &out->uuid_count);
+  }
+  case OP_DISCOVER_CHARACTERISTICS: {
+    out->kind = SIMBLE_RESP_CHARS_DISCOVERED;
+    st = copy_bytes(find(entries, count, K_PERIPHERAL), out->peripheral, sizeof(out->peripheral),
+                    &out->peripheral_len);
+    if (st != SIMBLE_OK)
+      return st;
+    st = copy_text(find(entries, count, K_SERVICE), out->service, sizeof(out->service));
+    if (st != SIMBLE_OK)
+      return st;
+    return copy_text_array(find(entries, count, K_CHARACTERISTIC_UUIDS), out->uuids,
+                           SIMBLE_MAX_UUIDS, &out->uuid_count);
+  }
   default:
-    // DISCOVER_SERVICES / DISCOVER_CHARACTERISTICS / ADD_SERVICE / REMOVE_SERVICE carry array or
-    // service fields the interposer reads through a typed accessor, not this flat decoder. They
-    // are valid responses; a caller that does not request them gets SIMBLE_ERR_OPCODE here.
+    // ADD_SERVICE / REMOVE_SERVICE carry a service field the interposer reads through a typed
+    // accessor, not this flat decoder. A caller that does not request them gets SIMBLE_ERR_OPCODE.
     return SIMBLE_ERR_OPCODE;
   }
 }

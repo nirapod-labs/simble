@@ -52,11 +52,13 @@ void simble_uninstall_hooks(void);
 
 /** How many times each routed central operation has fired since install. */
 typedef struct {
-  int scan_start; ///< scanForPeripheralsWithServices:options: calls routed to the helper.
-  int connect;    ///< connectPeripheral:options: calls routed to the helper.
-  int read;       ///< readValueForCharacteristic: calls routed to the helper.
-  int write;      ///< writeValue:forCharacteristic:type: calls routed to the helper.
-  int set_notify; ///< setNotifyValue:forCharacteristic: calls routed to the helper.
+  int scan_start;               ///< scanForPeripheralsWithServices:options: calls routed.
+  int connect;                  ///< connectPeripheral:options: calls routed to the helper.
+  int discover_services;        ///< discoverServices: calls routed to the helper.
+  int discover_characteristics; ///< discoverCharacteristics:forService: calls routed.
+  int read;                     ///< readValueForCharacteristic: calls routed to the helper.
+  int write;                    ///< writeValue:forCharacteristic:type: calls routed.
+  int set_notify;               ///< setNotifyValue:forCharacteristic: calls routed.
 } simble_hook_stats;
 
 /**

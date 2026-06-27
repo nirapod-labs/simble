@@ -27,7 +27,7 @@
 #import <objc/runtime.h>
 #import <pthread.h>
 
-static simble_hook_stats g_stats = {0, 0, 0, 0, 0};
+static simble_hook_stats g_stats = {0, 0, 0, 0, 0, 0, 0};
 static pthread_mutex_t g_install_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_installed = 0;
 
@@ -354,13 +354,69 @@ static BOOL peripheralRouteId(CBPeripheral *peripheral, uint8_t *out, size_t cap
   return simble_shadow_peripheral_id(peripheral, out, cap, outLen);
 }
 
+// Convert a CBUUID array filter to parallel UTF-8 string and length arrays held by an NSArray, so
+// the encoder reads stable pointers. Returns the count; sets *uuidsOut and *lensOut to malloc'd
+// arrays the caller frees, or NULL when the filter is empty.
+static size_t buildUUIDFilter(NSArray<CBUUID *> *uuids, NSMutableArray<NSString *> *held,
+                              const char ***uuidsOut, size_t **lensOut) {
+  size_t count = uuids.count;
+  if (count == 0) {
+    *uuidsOut = NULL;
+    *lensOut = NULL;
+    return 0;
+  }
+  const char **strs = calloc(count, sizeof(char *));
+  size_t *lens = calloc(count, sizeof(size_t));
+  for (size_t i = 0; i < count; i++) {
+    NSString *s = uuids[i].UUIDString;
+    [held addObject:s];
+    strs[i] = s.UTF8String;
+    lens[i] = strlen(strs[i]);
+  }
+  *uuidsOut = strs;
+  *lensOut = lens;
+  return count;
+}
+
 - (void)simble_discoverServices:(NSArray<CBUUID *> *)serviceUUIDs {
   if (!simble_shadow_is_managed_peripheral(self)) {
     [self simble_discoverServices:serviceUUIDs];
     return;
   }
-  // Service discovery is not routed in the central interposer; a routed discoverServices is a
-  // no-op. The routed read, write, and notify paths address a characteristic by its UUID.
+  // Route DISCOVER_SERVICES, mint a shadow service for each discovered UUID on this peripheral, and
+  // deliver peripheral:didDiscoverServices:.
+  uint8_t pid[64];
+  size_t idLen = 0;
+  if (!simble_shadow_peripheral_id(self, pid, sizeof(pid), &idLen))
+    return;
+  NSMutableArray<NSString *> *held = [NSMutableArray array];
+  const char **uuids = NULL;
+  size_t *lens = NULL;
+  size_t count = buildUUIDFilter(serviceUUIDs, held, &uuids, &lens);
+  simble_response resp;
+  simble_status st = simble_client_discover_services(pid, idLen, uuids, lens, count, &resp);
+  free(uuids);
+  free(lens);
+  g_stats.discover_services++;
+  CBPeripheral *peripheral = self;
+  if (st == SIMBLE_OK && resp.kind == SIMBLE_RESP_SERVICES_DISCOVERED) {
+    for (size_t i = 0; i < resp.uuid_count; i++) {
+      CBUUID *uuid = [CBUUID UUIDWithString:[NSString stringWithUTF8String:resp.uuids[i]]];
+      simble_shadow_service(peripheral, uuid);
+    }
+  }
+  SimbleManagerEntry *entry = simble_shadow_manager_entry(simble_shadow_owner(self));
+  dispatchOnManagerQueue(entry, ^{
+    id<CBPeripheralDelegate> delegate = peripheral.delegate;
+    NSError *error = (st == SIMBLE_OK && resp.kind == SIMBLE_RESP_SERVICES_DISCOVERED)
+                         ? nil
+                         : [NSError errorWithDomain:CBErrorDomain
+                                               code:resp.error_code
+                                           userInfo:nil];
+    if ([delegate respondsToSelector:@selector(peripheral:didDiscoverServices:)]) {
+      [delegate peripheral:peripheral didDiscoverServices:error];
+    }
+  });
 }
 
 - (void)simble_discoverCharacteristics:(NSArray<CBUUID *> *)characteristicUUIDs
@@ -369,7 +425,44 @@ static BOOL peripheralRouteId(CBPeripheral *peripheral, uint8_t *out, size_t cap
     [self simble_discoverCharacteristics:characteristicUUIDs forService:service];
     return;
   }
-  // Characteristic discovery is likewise not routed; a routed discoverCharacteristics is a no-op.
+  // Route DISCOVER_CHARACTERISTICS, mint a shadow characteristic for each discovered UUID on the
+  // service, and deliver peripheral:didDiscoverCharacteristics:forService:error:.
+  uint8_t pid[64];
+  size_t idLen = 0;
+  CBUUID *serviceUUID = nil;
+  if (!simble_shadow_resolve_service(service, pid, sizeof(pid), &idLen, &serviceUUID))
+    return;
+  const char *svc = serviceUUID.UUIDString.UTF8String;
+  NSMutableArray<NSString *> *held = [NSMutableArray array];
+  const char **uuids = NULL;
+  size_t *lens = NULL;
+  size_t count = buildUUIDFilter(characteristicUUIDs, held, &uuids, &lens);
+  simble_response resp;
+  simble_status st = simble_client_discover_characteristics(pid, idLen, svc, strlen(svc), uuids,
+                                                            lens, count, &resp);
+  free(uuids);
+  free(lens);
+  g_stats.discover_characteristics++;
+  CBPeripheral *peripheral = self;
+  if (st == SIMBLE_OK && resp.kind == SIMBLE_RESP_CHARS_DISCOVERED) {
+    for (size_t i = 0; i < resp.uuid_count; i++) {
+      CBUUID *uuid = [CBUUID UUIDWithString:[NSString stringWithUTF8String:resp.uuids[i]]];
+      simble_shadow_characteristic(service, uuid);
+    }
+  }
+  SimbleManagerEntry *entry = simble_shadow_manager_entry(simble_shadow_owner(self));
+  dispatchOnManagerQueue(entry, ^{
+    id<CBPeripheralDelegate> delegate = peripheral.delegate;
+    NSError *error = (st == SIMBLE_OK && resp.kind == SIMBLE_RESP_CHARS_DISCOVERED)
+                         ? nil
+                         : [NSError errorWithDomain:CBErrorDomain
+                                               code:resp.error_code
+                                           userInfo:nil];
+    if ([delegate
+            respondsToSelector:@selector(peripheral:didDiscoverCharacteristicsForService:error:)]) {
+      [delegate peripheral:peripheral didDiscoverCharacteristicsForService:service error:error];
+    }
+  });
 }
 
 - (void)simble_readValueForCharacteristic:(CBCharacteristic *)characteristic {

@@ -82,6 +82,39 @@ int main(void) {
             memcmp(buf + 38, connect_tail, sizeof(connect_tail)) == 0,
         "connect parity");
 
+  // DISCOVER_SERVICES with a filter: map(4), ending peripheral (30) then key 50 array(1) "180D".
+  const char *svc_uuids[] = {"180D"};
+  size_t svc_uuid_lens[] = {4};
+  n = simble_encode_discover_services(token, 32, pid, 4, svc_uuids, svc_uuid_lens, 1, buf,
+                                      sizeof(buf));
+  uint8_t disc_svc_tail[] = {0x18, 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04, 0x18,
+                             0x32, 0x81, 0x64, 0x31, 0x38, 0x30, 0x44};
+  CHECK(n == 53 && buf[0] == 0xA4 && buf[2] == 0x07 &&
+            memcmp(buf + 38, disc_svc_tail, sizeof(disc_svc_tail)) == 0,
+        "discover_services filter parity");
+
+  // DISCOVER_SERVICES with no filter is the peripheral-directed shape with op 7.
+  n = simble_encode_discover_services(token, 32, pid, 4, NULL, NULL, 0, buf, sizeof(buf));
+  CHECK(n == 45 && buf[0] == 0xA3 && buf[2] == 0x07 && buf[38] == 0x18 && buf[39] == 0x1E,
+        "discover_services no filter");
+
+  // DISCOVER_CHARACTERISTICS with a filter: map(5), peripheral (30), service (31), key 51 array(1).
+  const char *chr_uuids[] = {"2A37"};
+  size_t chr_uuid_lens[] = {4};
+  n = simble_encode_discover_characteristics(token, 32, pid, 4, "180D", 4, chr_uuids, chr_uuid_lens,
+                                             1, buf, sizeof(buf));
+  uint8_t disc_chr_tail[] = {0x18, 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04, 0x18, 0x1F, 0x64, 0x31,
+                             0x38, 0x30, 0x44, 0x18, 0x33, 0x81, 0x64, 0x32, 0x41, 0x33, 0x37};
+  CHECK(n == 60 && buf[0] == 0xA5 && buf[2] == 0x08 &&
+            memcmp(buf + 38, disc_chr_tail, sizeof(disc_chr_tail)) == 0,
+        "discover_characteristics filter parity");
+
+  // DISCOVER_CHARACTERISTICS with no filter drops key 51: map(4), ending service (31).
+  n = simble_encode_discover_characteristics(token, 32, pid, 4, "180D", 4, NULL, NULL, 0, buf,
+                                             sizeof(buf));
+  CHECK(n == 52 && buf[0] == 0xA4 && buf[2] == 0x08 && buf[n - 7] == 0x18 && buf[n - 6] == 0x1F,
+        "discover_characteristics no filter");
+
   // READ_CHARACTERISTIC: map(5).
   n = simble_encode_read_characteristic(token, 32, pid, 4, "180D", 4, "2A37", 4, buf, sizeof(buf));
   uint8_t read_tail[] = {0x18, 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04, 0x18, 0x1F, 0x64, 0x31,
@@ -144,6 +177,21 @@ int main(void) {
             resp.kind == SIMBLE_RESP_PERIPHERAL && resp.peripheral_len == 4 &&
             memcmp(resp.peripheral, pid, 4) == 0,
         "decode connected response");
+
+  uint8_t resp_services[] = {0xA4, 0x00, 0x07, 0x01, 0x00, 0x18, 0x1E, 0x44, 0x01, 0x02,
+                             0x03, 0x04, 0x18, 0x32, 0x81, 0x64, 0x31, 0x38, 0x30, 0x44};
+  CHECK(simble_decode_response(resp_services, sizeof(resp_services), &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_SERVICES_DISCOVERED && resp.peripheral_len == 4 &&
+            resp.uuid_count == 1 && strcmp(resp.uuids[0], "180D") == 0,
+        "decode services_discovered response");
+
+  uint8_t resp_chars[] = {0xA5, 0x00, 0x08, 0x01, 0x00, 0x18, 0x1E, 0x44, 0x01,
+                          0x02, 0x03, 0x04, 0x18, 0x1F, 0x64, 0x31, 0x38, 0x30,
+                          0x44, 0x18, 0x33, 0x81, 0x64, 0x32, 0x41, 0x33, 0x37};
+  CHECK(simble_decode_response(resp_chars, sizeof(resp_chars), &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_CHARS_DISCOVERED && strcmp(resp.service, "180D") == 0 &&
+            resp.uuid_count == 1 && strcmp(resp.uuids[0], "2A37") == 0,
+        "decode characteristics_discovered response");
 
   uint8_t resp_rssi[] = {0xA4, 0x00, 0x0C, 0x01, 0x00, 0x18, 0x1E, 0x44,
                          0x01, 0x02, 0x03, 0x04, 0x18, 0x22, 0x38, 0x29};

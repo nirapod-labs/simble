@@ -210,6 +210,33 @@ simble_status simble_client_disconnect(const uint8_t *peripheral_id, size_t peri
   return do_request(payload, n, out);
 }
 
+simble_status simble_client_discover_services(const uint8_t *peripheral_id, size_t peripheral_len,
+                                              const char *const *uuids, const size_t *uuid_lens,
+                                              size_t uuid_count, simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[1024];
+  int n = simble_encode_discover_services(token, sizeof(token), peripheral_id, peripheral_len,
+                                          uuids, uuid_lens, uuid_count, payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_discover_characteristics(const uint8_t *peripheral_id,
+                                                     size_t peripheral_len, const char *service,
+                                                     size_t service_len, const char *const *uuids,
+                                                     const size_t *uuid_lens, size_t uuid_count,
+                                                     simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[1024];
+  int n = simble_encode_discover_characteristics(token, sizeof(token), peripheral_id,
+                                                 peripheral_len, service, service_len, uuids,
+                                                 uuid_lens, uuid_count, payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
 simble_status simble_client_read_characteristic(const uint8_t *peripheral_id, size_t peripheral_len,
                                                 const char *service, size_t service_len,
                                                 const char *characteristic, size_t char_len,

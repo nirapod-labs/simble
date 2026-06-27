@@ -35,6 +35,8 @@
 @property(nonatomic, strong, nullable) CBUUID *characteristicUUID; // characteristic only
 @property(nonatomic, weak, nullable) CBCentralManager *owner;      // owning manager (peripheral)
 @property(nonatomic, weak, nullable) CBPeripheral *peripheral;     // owning peripheral (service)
+@property(nonatomic, strong, nullable)
+    NSMutableArray *children; // attached services or characteristics
 @end
 
 @implementation SimbleShadowMeta
@@ -70,6 +72,11 @@ static void shadowDealloc(id self, SEL _cmd) {
   (void)_cmd;
 }
 
+// Return the attached child list (services on a peripheral, characteristics on a service) the
+// registry minted, snapshotted under the lock. CoreBluetooth's own getter reads private ivars a
+// stand-in never had, so the stand-in answers from the registry instead.
+static id shadowChildren(id self, SEL _cmd);
+
 // Build a stand-in subclass of a CoreBluetooth class with the no-op dealloc, once per class.
 static Class makeShadowSubclass(Class base, const char *name) {
   Class cls = objc_allocateClassPair(base, name, 0);
@@ -93,6 +100,12 @@ __attribute__((constructor)) static void simble_shadow_init(void) {
   g_serviceShadowClass = makeShadowSubclass([CBService class], "SimbleShadowService");
   g_characteristicShadowClass =
       makeShadowSubclass([CBCharacteristic class], "SimbleShadowCharacteristic");
+  // The stand-in peripheral's services and the stand-in service's characteristics answer from the
+  // registry's attached child list.
+  class_addMethod(g_peripheralShadowClass, sel_registerName("services"), (IMP)shadowChildren,
+                  "@@:");
+  class_addMethod(g_serviceShadowClass, sel_registerName("characteristics"), (IMP)shadowChildren,
+                  "@@:");
 }
 
 static NSValue *ptr(id object) { return [NSValue valueWithPointer:(__bridge const void *)object]; }
@@ -110,6 +123,15 @@ static id mintInstance(Class cls) { return class_createInstance(cls, 0); }
 
 static SimbleShadowMeta *metaOf(id object) {
   return object ? objc_getAssociatedObject(object, kShadowMetaKey) : nil;
+}
+
+static id shadowChildren(id self, SEL _cmd) {
+  (void)_cmd;
+  SimbleShadowMeta *meta = metaOf(self);
+  [g_lock lock];
+  NSArray *snapshot = meta.children ? [meta.children copy] : @[];
+  [g_lock unlock];
+  return snapshot;
 }
 
 void simble_shadow_register_manager(CBCentralManager *manager,
@@ -215,6 +237,10 @@ CBService *simble_shadow_service(CBPeripheral *peripheral, CBUUID *serviceUUID) 
   objc_setAssociatedObject(minted, kShadowMetaKey, meta, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   g_services[key] = minted;
   [g_minted addObject:ptr(minted)];
+  // Attach the minted service to the peripheral so its services getter returns it.
+  if (!pmeta.children)
+    pmeta.children = [NSMutableArray new];
+  [pmeta.children addObject:minted];
   [g_lock unlock];
   return minted;
 }
@@ -244,8 +270,31 @@ CBCharacteristic *simble_shadow_characteristic(CBService *service, CBUUID *chara
   objc_setAssociatedObject(minted, kShadowMetaKey, meta, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   g_characteristics[key] = minted;
   [g_minted addObject:ptr(minted)];
+  // Attach the minted characteristic to the service so its characteristics getter returns it.
+  if (!smeta.children)
+    smeta.children = [NSMutableArray new];
+  [smeta.children addObject:minted];
   [g_lock unlock];
   return minted;
+}
+
+BOOL simble_shadow_resolve_service(CBService *service, uint8_t *peripheralOut, size_t peripheralCap,
+                                   size_t *peripheralLen, CBUUID *_Nullable *_Nonnull serviceUUID) {
+  if (!service)
+    return NO;
+  [g_lock lock];
+  BOOL minted = [g_minted containsObject:ptr(service)];
+  [g_lock unlock];
+  if (!minted)
+    return NO;
+  SimbleShadowMeta *meta = metaOf(service);
+  NSData *pidData = meta.peripheralId;
+  if (!pidData || (size_t)pidData.length > peripheralCap)
+    return NO;
+  memcpy(peripheralOut, pidData.bytes, pidData.length);
+  *peripheralLen = pidData.length;
+  *serviceUUID = meta.serviceUUID;
+  return YES;
 }
 
 BOOL simble_shadow_resolve_characteristic(CBCharacteristic *characteristic, uint8_t *peripheralOut,
