@@ -1,0 +1,315 @@
+; SPDX-License-Identifier: Apache-2.0
+; SPDX-FileCopyrightText: 2026 Nirapod Labs
+;
+; SimBLE wire protocol, version 1 (see VERSION and SPEC.md).
+;
+; Every message is a CBOR map with unsigned-integer keys, carried inside a 4-byte
+; big-endian length-prefixed frame. Integer keys keep the encoding compact and
+; canonical (keys ascending, shortest form). Decoders reject duplicate keys,
+; non-shortest-form integers and lengths, and trailing bytes, so each message has
+; exactly one value per key and the token in key 7 is unambiguous before it is
+; checked. There are three frame kinds, told apart by the op in key 0: a request
+; (guest to host, carries the token, no status), a response (host to guest, carries
+; a status, echoes the request op, no token), and an event (host to guest,
+; unsolicited, no token and no status, op in the 128-and-up range).
+
+start = request / response / event
+
+; --- keys ---------------------------------------------------------------
+; Shared with the SimEnclave wire: 0 op, 1 status, 6 error, 7 token, 8 version,
+; 10 errorCode, 14 appId, 28 appDisplayName.
+; 30 peripheralId  31 serviceUUID  32 characteristicUUID  33 value  34 rssi
+; 35 localName  36 advertisedServiceUUIDs  37 txPower  38 manufacturerData
+; 39 writeType  40 notify  41 managerState  42 requestId  43 attOffset
+; 44 charProperties  45 attPermissions  46 isPrimary  47 centralId  48 mtu
+; 49 attError  50 serviceUUIDs  51 characteristicUUIDs
+
+token = bstr .size 32          ; the per-session capability token
+write-type = 0 / 1             ; 0 withResponse, 1 withoutResponse
+flag = 0 / 1                   ; a boolean carried as a uint
+uuid = tstr                    ; a CBUUID string
+uuid-list = [* tstr]           ; a definite-length array of CBUUID strings
+char-props = bstr              ; packed u16 count then 8-byte big-endian properties, per characteristic
+att-perms = bstr               ; packed u16 count then 8-byte big-endian permissions, per characteristic
+
+; --- requests -----------------------------------------------------------
+; Every request carries the token in key 7. The op in key 0 is in 1 through 20.
+
+request = hello-request
+        / central-state-request
+        / scan-start-request
+        / scan-stop-request
+        / connect-request
+        / disconnect-request
+        / discover-services-request
+        / discover-characteristics-request
+        / read-characteristic-request
+        / write-characteristic-request
+        / set-notify-request
+        / read-rssi-request
+        / peripheral-state-request
+        / add-service-request
+        / remove-service-request
+        / start-advertising-request
+        / stop-advertising-request
+        / respond-read-request
+        / respond-write-request
+        / update-value-request
+
+hello-request = {
+  0 => 1,                ; op = HELLO
+  7 => token,
+  8 => 1,                ; version the interposer speaks
+  ? 14 => tstr,          ; calling app's bundle id, for display (guest-reported, not a boundary)
+  ? 28 => tstr,          ; calling app's display name, for display (guest-reported, untrusted)
+}
+
+central-state-request = { 0 => 2, 7 => token }   ; op = CENTRAL_STATE
+
+scan-start-request = {
+  0 => 3,                ; op = SCAN_START
+  7 => token,
+  ? 50 => uuid-list,     ; service-UUID scan filter; absent scans for all
+}
+
+scan-stop-request = { 0 => 4, 7 => token }       ; op = SCAN_STOP
+
+connect-request = { 0 => 5, 7 => token, 30 => bstr }      ; op = CONNECT, peripheral id
+disconnect-request = { 0 => 6, 7 => token, 30 => bstr }   ; op = DISCONNECT, peripheral id
+
+discover-services-request = {
+  0 => 7,                ; op = DISCOVER_SERVICES
+  7 => token,
+  30 => bstr,            ; peripheral id
+  ? 50 => uuid-list,     ; service-UUID filter; absent discovers all
+}
+
+discover-characteristics-request = {
+  0 => 8,                ; op = DISCOVER_CHARACTERISTICS
+  7 => token,
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  ? 51 => uuid-list,     ; characteristic-UUID filter; absent discovers all
+}
+
+read-characteristic-request = {
+  0 => 9,                ; op = READ_CHARACTERISTIC
+  7 => token,
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+}
+
+write-characteristic-request = {
+  0 => 10,               ; op = WRITE_CHARACTERISTIC
+  7 => token,
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  33 => bstr,            ; value
+  39 => write-type,      ; with or without response
+}
+
+set-notify-request = {
+  0 => 11,               ; op = SET_NOTIFY
+  7 => token,
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  40 => flag,            ; enable (1) or disable (0)
+}
+
+read-rssi-request = { 0 => 12, 7 => token, 30 => bstr }        ; op = READ_RSSI
+peripheral-state-request = { 0 => 13, 7 => token, 30 => bstr } ; op = PERIPHERAL_STATE
+
+add-service-request = {
+  0 => 14,               ; op = ADD_SERVICE
+  7 => token,
+  31 => uuid,            ; service UUID
+  44 => char-props,      ; per-characteristic CBCharacteristicProperties, aligned with key 51
+  45 => att-perms,       ; per-characteristic CBAttributePermissions, aligned with key 51
+  46 => flag,            ; isPrimary
+  51 => uuid-list,       ; the service's characteristic UUIDs
+}
+
+remove-service-request = { 0 => 15, 7 => token, 31 => uuid }  ; op = REMOVE_SERVICE
+
+start-advertising-request = {
+  0 => 16,               ; op = START_ADVERTISING
+  7 => token,
+  ? 35 => tstr,          ; local name
+  ? 36 => uuid-list,     ; advertised service UUIDs
+}
+
+stop-advertising-request = { 0 => 17, 7 => token }   ; op = STOP_ADVERTISING
+
+respond-read-request = {
+  0 => 18,               ; op = RESPOND_READ
+  7 => token,
+  33 => bstr,            ; value to return
+  42 => uint,            ; request id, correlating the incoming READ_REQUEST event
+  49 => uint,            ; ATT result code; 0 is success
+}
+
+respond-write-request = {
+  0 => 19,               ; op = RESPOND_WRITE
+  7 => token,
+  42 => uint,            ; request id, correlating the incoming WRITE_REQUEST event
+  49 => uint,            ; ATT result code; 0 is success
+}
+
+update-value-request = {
+  0 => 20,               ; op = UPDATE_VALUE
+  7 => token,
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  33 => bstr,            ; new value
+  ? 47 => bstr,          ; target central id; absent updates every subscribed central
+}
+
+; --- responses ----------------------------------------------------------
+; A response echoes the request op in key 0, carries the status in key 1, and
+; never carries the token. An error rides any op.
+
+response = hello-ok
+         / central-state-ok
+         / confirm-ok
+         / peripheral-ok
+         / services-discovered-ok
+         / characteristics-discovered-ok
+         / characteristic-value-ok
+         / notify-state-ok
+         / rssi-ok
+         / peripheral-state-ok
+         / service-ok
+         / error-response
+
+hello-ok = { 0 => 1, 1 => 0, 8 => 1 }                  ; HELLO ok, version the helper speaks
+central-state-ok = { 0 => 2, 1 => 0, 41 => uint }      ; CENTRAL_STATE ok, CBManagerState
+
+; A bare confirmation for SCAN_START (3), SCAN_STOP (4), WRITE_CHARACTERISTIC (10),
+; START_ADVERTISING (16), STOP_ADVERTISING (17), RESPOND_READ (18), RESPOND_WRITE (19),
+; UPDATE_VALUE (20). Status alone, the op echoed.
+confirm-ok = { 0 => (3 / 4 / 10 / 16 / 17 / 18 / 19 / 20), 1 => 0 }
+
+; CONNECT (5) and DISCONNECT (6) confirm with the peripheral id.
+peripheral-ok = { 0 => (5 / 6), 1 => 0, 30 => bstr }
+
+services-discovered-ok = {
+  0 => 7, 1 => 0,        ; DISCOVER_SERVICES ok
+  30 => bstr,            ; peripheral id
+  50 => uuid-list,       ; discovered service UUIDs
+}
+
+characteristics-discovered-ok = {
+  0 => 8, 1 => 0,        ; DISCOVER_CHARACTERISTICS ok
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  51 => uuid-list,       ; discovered characteristic UUIDs
+}
+
+characteristic-value-ok = {
+  0 => 9, 1 => 0,        ; READ_CHARACTERISTIC ok
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  33 => bstr,            ; value
+}
+
+notify-state-ok = {
+  0 => 11, 1 => 0,       ; SET_NOTIFY ok
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  40 => flag,            ; the notification state the host set
+}
+
+rssi-ok = { 0 => 12, 1 => 0, 30 => bstr, 34 => int }       ; READ_RSSI ok, RSSI in dBm
+peripheral-state-ok = { 0 => 13, 1 => 0, 30 => bstr, 41 => uint } ; PERIPHERAL_STATE ok
+
+; ADD_SERVICE (14) and REMOVE_SERVICE (15) confirm with the service UUID.
+service-ok = { 0 => (14 / 15), 1 => 0, 31 => uuid }
+
+error-response = {
+  0 => uint,             ; op echoed
+  1 => 1,                ; status = ERROR
+  6 => tstr,             ; human-readable reason, never load-bearing
+  10 => int,             ; errorCode, a CBError/CBATTError code for device parity
+}
+
+; --- events -------------------------------------------------------------
+; Unsolicited, host to guest. No token, no status, op in key 0 at 128 and up.
+
+event = discovered-event
+      / characteristic-value-event
+      / disconnected-event
+      / central-state-changed-event
+      / peripheral-state-changed-event
+      / read-request-event
+      / write-request-event
+      / subscribed-event
+      / unsubscribed-event
+      / ready-to-update-event
+
+discovered-event = {
+  0 => 128,              ; DISCOVERED
+  30 => bstr,            ; peripheral id
+  34 => int,             ; RSSI in dBm
+  ? 35 => tstr,          ; advertised local name
+  ? 36 => uuid-list,     ; advertised service UUIDs
+  ? 37 => int,           ; advertised TX power in dBm
+  ? 38 => bstr,          ; advertised manufacturer data
+}
+
+characteristic-value-event = {
+  0 => 129,              ; CHAR_VALUE, a notification or indication (central role)
+  30 => bstr,            ; peripheral id
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  33 => bstr,            ; value
+}
+
+disconnected-event = {
+  0 => 130,              ; DISCONNECTED, unsolicited
+  ? 10 => int,           ; CBError code when the disconnect carried one
+  30 => bstr,            ; peripheral id
+}
+
+central-state-changed-event = { 0 => 131, 41 => uint }    ; CENTRAL_STATE_CHANGED, CBManagerState
+peripheral-state-changed-event = { 0 => 132, 41 => uint } ; PERIPHERAL_STATE_CHANGED, CBManagerState
+
+read-request-event = {
+  0 => 133,              ; READ_REQUEST, incoming from a real central (peripheral role)
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  42 => uint,            ; request id, to be echoed in RESPOND_READ
+  43 => uint,            ; ATT offset
+  47 => bstr,            ; requesting central id
+}
+
+write-request-event = {
+  0 => 134,              ; WRITE_REQUEST, incoming from a real central (peripheral role)
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  33 => bstr,            ; value being written
+  42 => uint,            ; request id, to be echoed in RESPOND_WRITE
+  43 => uint,            ; ATT offset
+  47 => bstr,            ; requesting central id
+}
+
+subscribed-event = {
+  0 => 135,              ; SUBSCRIBED (peripheral role)
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  47 => bstr,            ; subscribing central id
+  48 => uint,            ; the central's maximumUpdateValueLength
+}
+
+unsubscribed-event = {
+  0 => 136,              ; UNSUBSCRIBED (peripheral role)
+  31 => uuid,            ; service UUID
+  32 => uuid,            ; characteristic UUID
+  47 => bstr,            ; central id
+}
+
+ready-to-update-event = { 0 => 137 }   ; READY_TO_UPDATE, the transmit queue has room again
