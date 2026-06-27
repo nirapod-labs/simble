@@ -1,0 +1,50 @@
+{
+  // SPDX-License-Identifier: Apache-2.0
+  // SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+  "clangd.arguments": ["--background-index", "--clang-tidy", "--header-insertion=never"],
+  "C_Cpp.intelliSenseEngine": "disabled",
+
+  "cmake.configureOnOpen": false,
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+
+  "swift.searchSubfoldersForPackages": true,
+  "swift.swiftEnvironmentVariables": {
+    "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"
+  },
+
+  "editor.formatOnSave": true,
+  "[c]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+  "[h]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+
+  "files.exclude": {
+    "**/.build": true,
+    "**/build": true,
+    "**/build-sim": true,
+    "**/build-watchsim": true,
+    "**/build-docs": true,
+    "**/DerivedData": true,
+    "**/.turbo": true
+  },
+  "search.exclude": {
+    "**/.build": true,
+    "**/build": true,
+    "**/build-sim": true,
+    "**/build-watchsim": true,
+    "**/build-docs": true,
+    "**/_deps": true,
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/.build/**": true,
+    "**/build/**": true,
+    "**/build-sim/**": true,
+    "**/build-watchsim/**": true,
+    "**/build-docs/**": true,
+    "**/node_modules/**": true
+  }
+}

@@ -1,0 +1,30 @@
+{
+  // SPDX-License-Identifier: Apache-2.0
+  // SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "make build",
+      "type": "shell",
+      "command": "make build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "make test",
+      "type": "shell",
+      "command": "make test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "make docs",
+      "type": "shell",
+      "command": "make docs",
+      "problemMatcher": []
+    },
+    { "label": "make lint", "type": "shell", "command": "make lint", "problemMatcher": [] },
+    { "label": "make format", "type": "shell", "command": "make format", "problemMatcher": [] }
+  ]
+}

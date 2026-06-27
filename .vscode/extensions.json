@@ -1,0 +1,14 @@
+{
+  // SPDX-License-Identifier: Apache-2.0
+  // SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+  "recommendations": [
+    "swiftlang.swift-vscode",
+    "llvm-vs-code-extensions.vscode-clangd",
+    "ms-vscode.cmake-tools",
+    "biomejs.biome",
+    "editorconfig.editorconfig",
+    "github.vscode-github-actions"
+  ],
+  "unwantedRecommendations": ["ms-vscode.cpptools"]
+}

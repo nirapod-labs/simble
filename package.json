@@ -1,0 +1,28 @@
+{
+  "name": "simble",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Real Bluetooth Low Energy for the iOS and watchOS Simulators.",
+  "author": "athexweb3",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/nirapod-labs/simble",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nirapod-labs/simble.git"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "ci:lint": "biome ci .",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "lefthook": "^1.7.18"
+  }
+}
