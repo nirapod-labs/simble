@@ -115,6 +115,40 @@ simble_status simble_client_disconnect(const uint8_t *peripheral_id, size_t peri
                                        simble_response *out);
 
 /**
+ * @brief Discover services on a connected peripheral, optionally filtered.
+ *
+ * @param[in]  peripheral_id  Host peripheral identifier bytes.
+ * @param[in]  peripheral_len Length of @p peripheral_id.
+ * @param[in]  uuids          Array of UTF-8 service UUID strings to filter on, or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits the filter.
+ * @param[out] out            The decoded response; ::SIMBLE_RESP_SERVICES_DISCOVERED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_discover_services(const uint8_t *peripheral_id, size_t peripheral_len,
+                                              const char *const *uuids, const size_t *uuid_lens,
+                                              size_t uuid_count, simble_response *out);
+
+/**
+ * @brief Discover characteristics of a service on a connected peripheral, optionally filtered.
+ *
+ * @param[in]  peripheral_id  Host peripheral identifier bytes.
+ * @param[in]  peripheral_len Length of @p peripheral_id.
+ * @param[in]  service        Service UUID, UTF-8.
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  uuids          Array of UTF-8 characteristic UUID strings to filter on, or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits the filter.
+ * @param[out] out            The decoded response; ::SIMBLE_RESP_CHARS_DISCOVERED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_discover_characteristics(const uint8_t *peripheral_id,
+                                                     size_t peripheral_len, const char *service,
+                                                     size_t service_len, const char *const *uuids,
+                                                     const size_t *uuid_lens, size_t uuid_count,
+                                                     simble_response *out);
+
+/**
  * @brief Read a characteristic value from a connected peripheral.
  *
  * @param[in]  peripheral_id  Host peripheral identifier bytes.

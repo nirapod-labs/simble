@@ -136,6 +136,47 @@ int simble_encode_scan_start(const uint8_t *token, size_t token_len, const char 
                              const size_t *uuid_lens, size_t uuid_count, uint8_t *out, size_t cap);
 
 /**
+ * @brief Encode a DISCOVER_SERVICES request.
+ *
+ * @param[in]  token          32-byte capability token.
+ * @param[in]  token_len      Length of @p token.
+ * @param[in]  peripheral_id  Host peripheral identifier (key 30).
+ * @param[in]  peripheral_len Length of @p peripheral_id.
+ * @param[in]  uuids          Array of UTF-8 service UUID strings to filter on, or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits key 50.
+ * @param[out] out            Buffer the payload is written to.
+ * @param[in]  cap            Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small.
+ */
+int simble_encode_discover_services(const uint8_t *token, size_t token_len,
+                                    const uint8_t *peripheral_id, size_t peripheral_len,
+                                    const char *const *uuids, const size_t *uuid_lens,
+                                    size_t uuid_count, uint8_t *out, size_t cap);
+
+/**
+ * @brief Encode a DISCOVER_CHARACTERISTICS request.
+ *
+ * @param[in]  token          32-byte capability token.
+ * @param[in]  token_len      Length of @p token.
+ * @param[in]  peripheral_id  Host peripheral identifier (key 30).
+ * @param[in]  peripheral_len Length of @p peripheral_id.
+ * @param[in]  service        Service UUID, UTF-8 (key 31).
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  uuids          Array of UTF-8 characteristic UUID strings to filter on, or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits key 51.
+ * @param[out] out            Buffer the payload is written to.
+ * @param[in]  cap            Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small.
+ */
+int simble_encode_discover_characteristics(const uint8_t *token, size_t token_len,
+                                           const uint8_t *peripheral_id, size_t peripheral_len,
+                                           const char *service, size_t service_len,
+                                           const char *const *uuids, const size_t *uuid_lens,
+                                           size_t uuid_count, uint8_t *out, size_t cap);
+
+/**
  * @brief Encode a READ_CHARACTERISTIC request.
  *
  * @param[in]  token          32-byte capability token.
@@ -245,8 +286,17 @@ typedef enum {
   SIMBLE_RESP_CHAR_VALUE,       ///< READ_CHARACTERISTIC ok: peripheral, service, characteristic,
                                 ///< value are set.
   SIMBLE_RESP_NOTIFY_STATE,     ///< SET_NOTIFY ok: peripheral, service, characteristic, notify set.
+  SIMBLE_RESP_SERVICES_DISCOVERED, ///< DISCOVER_SERVICES ok: peripheral and the uuids list are set.
+  SIMBLE_RESP_CHARS_DISCOVERED, ///< DISCOVER_CHARACTERISTICS ok: peripheral, service, and the uuids
+                                ///< list are set.
   SIMBLE_RESP_ERROR,            ///< The helper returned an error: error and error_code are set.
 } simble_resp_kind;
+
+/** The most discovered UUIDs a single discover response surfaces. */
+#define SIMBLE_MAX_UUIDS 32
+
+/** The buffer a single discovered UUID is copied into, NUL-terminated. */
+#define SIMBLE_UUID_CAP 40
 
 /**
  * A decoded response. Fixed buffers, no ownership: the decoder copies out of the
@@ -265,8 +315,11 @@ typedef struct {
   size_t value_len;        ///< Meaningful bytes in @c value.
   int64_t rssi;            ///< RSSI on a READ_RSSI response.
   int notify;              ///< Notification state on a SET_NOTIFY response: 0 or 1.
-  char error[256];         ///< NUL-terminated reason on an error; never load-bearing.
-  int64_t error_code;      ///< CBError/CBATTError code on an error response, 0 otherwise.
+  char uuids[SIMBLE_MAX_UUIDS][SIMBLE_UUID_CAP]; ///< Discovered UUIDs, NUL-terminated, on a
+                                                 ///< discover response.
+  size_t uuid_count;                             ///< Meaningful entries in @c uuids.
+  char error[256];    ///< NUL-terminated reason on an error; never load-bearing.
+  int64_t error_code; ///< CBError/CBATTError code on an error response, 0 otherwise.
 } simble_response;
 
 /**

@@ -137,6 +137,20 @@ CBCharacteristic *_Nullable simble_shadow_characteristic(CBService *service,
                                                          CBUUID *characteristicUUID);
 
 /**
+ * @brief Resolve a minted service to its peripheral id and service UUID, so a discovery on it can
+ *        be routed by host identity.
+ *
+ * @param[in]  service       The minted service.
+ * @param[out] peripheralOut Buffer the peripheral id is copied into.
+ * @param[in]  peripheralCap Capacity of @p peripheralOut.
+ * @param[out] peripheralLen Bytes written to @p peripheralOut.
+ * @param[out] serviceUUID   Set to the service CBUUID.
+ * @return YES on a hit, NO if @p service was not minted here.
+ */
+BOOL simble_shadow_resolve_service(CBService *service, uint8_t *peripheralOut, size_t peripheralCap,
+                                   size_t *peripheralLen, CBUUID *_Nullable *_Nonnull serviceUUID);
+
+/**
  * @brief Resolve a minted characteristic to its peripheral id, service UUID, and characteristic
  *        UUID, so an operation on it can be routed by host identity.
  *
