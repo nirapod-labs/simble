@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Nirapod Labs
 
 cmake_minimum_required(VERSION 3.24)
-project(SimBLE LANGUAGES C)
+project(SimBLE LANGUAGES C OBJC)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

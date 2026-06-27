@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Nirapod Labs
-
-Checks: >
-  clang-analyzer-*,
-  bugprone-*,
-  performance-*,
-  readability-*
-WarningsAsErrors: ''
+#
+# Curated for a low-level C wire codec and an interposer. The bug-finding
+# families stay on (clang-analyzer, bugprone, performance). Off:
+#   readability-identifier-length          one-letter loop/byte vars are idiomatic here
+#   readability-magic-numbers              the CBOR byte constants are the wire format
+#   readability-braces-around-statements   clashes with .clang-format compact returns
+#   bugprone-easily-swappable-parameters   flags ordinary (buf,len)/(ptr,count) C
+#   ...insecureAPI.DeprecatedOrUnsafeBufferHandling  wants C11 Annex K _s funcs, absent on Darwin
+# Test and demo harnesses relax two more checks; see packages/*/tests/.clang-tidy.
+Checks: "clang-analyzer-*,bugprone-*,-bugprone-easily-swappable-parameters,performance-*,readability-*,-readability-identifier-length,-readability-magic-numbers,-readability-braces-around-statements,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling"
+WarningsAsErrors: ""
+HeaderFilterRegex: "packages/interpose/(src|include)/.*"
