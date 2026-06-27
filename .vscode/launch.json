@@ -1,0 +1,47 @@
+{
+  // SPDX-License-Identifier: Apache-2.0
+  // SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:simble}/apps/helper",
+      "name": "Debug simble-helper (apps/helper)",
+      "target": "simble-helper",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug simble-helper (apps/helper)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:simble}/apps/helper",
+      "name": "Release simble-helper (apps/helper)",
+      "target": "simble-helper",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release simble-helper (apps/helper)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:simble}/tools/simblectl",
+      "name": "Debug simblectl (tools/simblectl)",
+      "target": "simblectl",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug simblectl (tools/simblectl)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:simble}/tools/simblectl",
+      "name": "Release simblectl (tools/simblectl)",
+      "target": "simblectl",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release simblectl (tools/simblectl)"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+name: ci-hardware
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ble-hardware:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hardware BLE mechanism tests are not implemented yet."

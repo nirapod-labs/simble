@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+#
+# Doxygen configuration for the C tree. Run: make docs. Output:
+# build-docs/html/index.html. WARN_AS_ERROR makes this a documentation gate.
+
+PROJECT_NAME           = "SimBLE"
+PROJECT_BRIEF          = "Real Bluetooth Low Energy for the iOS and watchOS Simulators"
+
+INPUT                  = packages/protocol/c/include \
+                         packages/protocol/c/src \
+                         packages/interpose/include \
+                         packages/interpose/src
+FILE_PATTERNS          = *.h
+RECURSIVE              = YES
+
+OUTPUT_DIRECTORY       = build-docs
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+WARN_AS_ERROR          = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_FORMAT            = "$file:$line: $text"
+QUIET                  = YES
+
+GENERATE_TREEVIEW      = YES
+SOURCE_BROWSER         = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+HAVE_DOT               = NO
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = "__attribute__(x)="

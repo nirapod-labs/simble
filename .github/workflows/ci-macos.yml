@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+name: ci-macos
+
+on:
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "Doxyfile"
+      - "Makefile"
+      - "scripts/**"
+      - ".github/workflows/ci-macos.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "Doxyfile"
+      - "Makefile"
+      - "scripts/**"
+      - ".github/workflows/ci-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install doxygen
+        run: brew install doxygen
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test
+      - name: Doxygen
+        run: make docs

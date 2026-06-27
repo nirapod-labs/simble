@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+.DS_Store
+.build/
+.swiftpm/
+.turbo/
+build/
+build-sim/
+build-watchsim/
+build-docs/
+dist/
+node_modules/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/xcuserdata/
+*.xcuserstate

@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+disabled_rules:
+  - trailing_comma
+line_length:
+  warning: 120
+  error: 140

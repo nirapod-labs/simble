@@ -1,0 +1,7 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: SimBLE
+Source: https://github.com/nirapod-labs/simble
+
+Files: .commitlintrc.json .tool-versions .xcode-version LICENSE VERSION biome.json package.json pnpm-lock.yaml turbo.json
+Copyright: 2026 Nirapod Labs
+License: Apache-2.0

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "files": {
+    "ignore": [
+      "**/.build/**",
+      "**/.swiftpm/**",
+      "**/.turbo/**",
+      "**/build/**",
+      "**/build-docs/**",
+      "**/build-sim/**",
+      "**/build-watchsim/**",
+      "**/dist/**",
+      "**/node_modules/**"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  }
+}
