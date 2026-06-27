@@ -42,6 +42,22 @@ do {
   exit(1)
 }
 
+// SIGKILL skips disarm; the next arm overwrites the stale env.
+
+let arming = SimulatorArming()
+arming.armBooted(port: listener.port, token: token.hex)
+atexit { SimulatorArming().disarm() }
+let signalSources: [DispatchSourceSignal] = [SIGINT, SIGTERM].map { number in
+  signal(number, SIG_IGN)
+  let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+  source.setEventHandler {
+    arming.disarm()
+    exit(0)
+  }
+  source.resume()
+  return source
+}
+
 print("{\"ready\":true,\"port\":\(listener.port)}")
 fflush(stdout)
 

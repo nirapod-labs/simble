@@ -1,10 +1,38 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Nirapod Labs
 
+# xcodegen spec for the SimBLE native example. Generate the project with `xcodegen generate`
+# (run it from examples/native). A Simulator build needs no code signing.
+#
+# The watchOS target is a standalone CoreBluetooth central. It does not link the interposer; the
+# SimBLE helper arms the booted simulator, so the app's CoreBluetooth calls reach the host radio.
+
 name: SimBLEExample
 options:
   bundleIdPrefix: dev.simble
   deploymentTarget:
     iOS: "17.0"
     watchOS: "10.0"
-targets: {}
+  createIntermediateGroups: true
+
+targets:
+  SimBLEWatchExample:
+    type: application
+    platform: watchOS
+    sources:
+      - Watch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.simble.SimBLEWatchExample
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: SimBLE Watch
+        # Standalone single-target watch app, no iOS companion; the sim installs and runs it alone.
+        INFOPLIST_KEY_WKApplication: "YES"
+        INFOPLIST_KEY_WKWatchOnly: "YES"
+        # CoreBluetooth on watchOS needs the usage description to authorize the central.
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Scan for nearby Bluetooth peripherals."
+        TARGETED_DEVICE_FAMILY: "4"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: "NO"
