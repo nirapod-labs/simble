@@ -1,0 +1,417 @@
+.docname {SimBLE Architecture}
+.docauthor {Nirapod Labs}
+.doctype {plain}
+.doclang {English}
+.theme {paperwhite} layout:{latex}
+
+.numbering
+    - headings: 1.1.1
+    - figures: 1.1
+    - tables: 1.1
+    - equations: (1)
+
+*A technical architecture reference, built by [Nirapod Labs](https://github.com/nirapod-labs).*
+
+.box {Abstract} type:{note}
+    The iOS and watchOS Simulators have no Bluetooth radio. SimBLE gives a simulated app real
+    Bluetooth Low Energy by intercepting its CoreBluetooth calls and relaying the operations to
+    the host Mac's real Bluetooth adapter over an authenticated loopback channel. The simulated app
+    scans, connects, reads, writes, subscribes, and advertises against live peripherals; the radio
+    work happens on the host and the results flow back as the same delegate callbacks the app would
+    receive on a device. This document specifies the architecture: the interception layer, the wire
+    protocol, the host bridge, the trust boundary, the custody verdict, and the safety fence that
+    makes the tool unable to follow code into production.
+
+.box {Status} type:{warning}
+    This is the architecture specification for SimBLE v1.0.0. It describes the target design. The
+    repository is at scaffold stage; for what is implemented today, read `SECURITY.md` and the
+    package READMEs. Statements here describe how the tool is designed to behave, not a claim that
+    every part is built.
+
+.tableofcontents maxdepth:{2}
+
+.pagebreak
+
+# The problem
+
+CoreBluetooth is the one Apple API you cannot exercise in the Simulator. A simulated process has no
+Bluetooth controller behind it, so `CBCentralManager` comes up in a powered-off, unsupported state:
+no scan returns a peripheral, no connection completes, and `CBPeripheralManager` cannot advertise.
+The workflow you most want to iterate on, the BLE central and peripheral paths, is exactly the one
+the Simulator cannot run, and developers fall back to building onto a physical device for every
+change that touches a characteristic.
+
+Let $ \mathcal{O}_{BLE} $ be the set of Bluetooth operations an app issues: scanning, connecting,
+GATT discovery, characteristic read and write, subscription, and, in the peripheral role,
+advertising and responding. On a device every $ o \in \mathcal{O}_{BLE} $ resolves against the
+controller. In the Simulator every $ o $ fails closed. SimBLE restores the mapping by redirecting
+each $ o $ to the host adapter while leaving every non-Bluetooth call untouched:
+
+$$$
+\text{route}(o) =
+\begin{cases}
+\text{host adapter}  & \text{if } o \in \mathcal{O}_{BLE} \\
+\text{passthrough}   & \text{otherwise}
+\end{cases}
+$$$
+
+The design constraint is **faithfulness**: the app's objects, delegate callbacks, ordering, and
+error codes must match a device, so the same source runs unchanged in both places. SimBLE relays the
+real adapter's behavior and adds no semantics of its own.
+
+# System architecture
+
+Three deployables and one shared contract span two address spaces: the simulated **guest** process
+and the host **helper** process. The interposer lives inside the guest; the helper owns the real
+Bluetooth adapter and serves requests over loopback. Unlike a synchronous request-reply tool, a BLE
+bridge is bidirectional and event-driven: commands flow guest to host, and events (discoveries,
+notifications, incoming central requests) flow host to guest and are delivered as delegate callbacks.
+
+.mermaid caption:{The two address spaces and the path of a Bluetooth operation.}
+    flowchart LR
+        subgraph SIM["Simulator process (guest)"]
+            APP["App code\nCBCentralManager / CBPeripheralManager"]
+            HOOK["Interposer (dylib)\nObjC runtime hooks"]
+            REG["Shadow registries\nperipherals, services, characteristics"]
+            DISP["Delegate dispatch\non the app's queue"]
+            CLI["Loopback client\nlength-prefixed CBOR"]
+            APP --> HOOK
+            HOOK --> REG
+            HOOK --> CLI
+            CLI --> DISP --> APP
+        end
+        subgraph HOST["macOS host process (helper)"]
+            SRV["Loopback server\ntoken-authenticated"]
+            ROUTE["Request router"]
+            CORE["host-core\nCoreBluetooth on macOS"]
+            HW["Real Bluetooth adapter\nlive peripherals"]
+            SRV --> ROUTE --> CORE --> HW
+        end
+        CLI ==>|"127.0.0.1 : port\nframe = len ‖ CBOR"| SRV
+        HW -. "events: discovered, value, request" .-> CORE
+        CORE -. event frame .-> CLI
+
+The guest holds no radio and no link state of its own; it holds shadow objects that stand in for the
+framework's `CBPeripheral`, `CBService`, and `CBCharacteristic`. What crosses the boundary is the
+operation, its identifiers, and its byte payloads, which is the same information a device app already
+exchanges with the controller.
+
+.row alignment:{spacebetween} gap:{1cm}
+    .container border:{gray} borderwidth:{1px} padding:{12px} radius:{6px}
+        **`packages/interpose`**
+        The injected dylib. Hooks the CoreBluetooth classes and selectors, redirects Bluetooth
+        operations, synthesizes shadow objects, and dispatches events to the app's delegate.
+
+    .container border:{gray} borderwidth:{1px} padding:{12px} radius:{6px}
+        **`apps/helper`** (Swift)
+        The menu bar app. Owns the host adapter, authenticates the channel, arms simulators,
+        answers requests, and streams events.
+
+    .container border:{gray} borderwidth:{1px} padding:{12px} radius:{6px}
+        **`packages/protocol`**
+        One spec, two byte-identical codecs: Swift for the helper, C for the interposer.
+
+A fourth surface, `tools/simblectl`, is a JSON command-line client over the same protocol, so a
+person or an agent can drive the adapter and read status without a UI.
+
+# Trust model and the channel
+
+The channel is a TCP socket bound to the loopback address `127.0.0.1`, authenticated by a
+per-session capability **token**. Loopback binding means only processes on the same host can
+connect; the token means only a process that can read the helper's per-user state directory can
+speak the protocol.
+
+Let the token be a uniformly random $ b $-bit value, $ b = 256 $. An attacker who can reach the socket
+but cannot read the token must guess it. Over $ q $ attempts the success probability is bounded by
+
+$$$
+\Pr[\text{forge}] \le \frac{q}{2^{b}} = \frac{q}{2^{256}}
+$$$
+
+which is negligible for any feasible $ q $. The token is therefore not the real boundary; the real
+boundary is **local process identity**. A process that can read the token already runs as the
+developer, which is full host compromise and out of scope for a development tool.
+
+.box {Threat boundary} type:{warning}
+    In scope: another local process probing the loopback port without the token; a malformed or
+    hostile frame from the guest; an attacker-influenced app name, icon, or peripheral name in a
+    `HELLO` or a discovery event.
+    Out of scope: an adversary already executing as the developer's user, who by definition owns the
+    Bluetooth session and the host regardless of SimBLE.
+
+Hostile input is handled by treating every framed message as untrusted in both directions: the codec
+rejects duplicate keys, non-canonical integers, oversized payloads, and trailing bytes; display
+strings are length-clamped and stripped of control characters; an icon is validated as a real PNG
+under a hard byte cap before the helper renders it; advertisement and characteristic payloads are
+bounded before they are surfaced.
+
+# Custody verdict
+
+SimBLE moves Bluetooth traffic and nothing else. It does not generate, store, or transport private
+keys; it holds no recovery secret and is no recovery authority; it signs nothing and touches no
+funds. The verdict is **PASS**, and the design below is what bounds it.
+
+Two facts bound the data that can cross the bridge. First, v1 excludes pairing and bonding, the BLE
+procedures that derive and persist a long-term link key, so no key material is ever relayed: the
+wire carries GATT operations and their byte payloads, which are application data the app already
+owns. Second, the helper is a relay, not a cryptographic party; it adds no key, no signature, and no
+canonicalization to anything it forwards. Whatever security an application layers on top of its
+characteristics is computed in the application, on both device and Simulator alike, and SimBLE
+neither sees into it nor depends on it.
+
+# The interposer
+
+Bluetooth has no public seam for a registered virtual adapter: there is no supported API by which a
+third party hands CoreBluetooth a software controller. The only way in is to intercept the calls
+inside the guest process. CoreBluetooth is an Objective-C framework, so the interposer works at the
+Objective-C runtime: it replaces the implementations of the methods an app calls and the methods the
+framework would call back, so the redirect is independent of any private symbol.
+
+For an original method $ m $ the hook installs a replacement $ \hat{m} $ that keeps a callable copy of
+the original. The effective behavior is a branch on whether the receiver belongs to SimBLE:
+
+$$$
+\hat{m}(x) =
+\begin{cases}
+\text{relay}_m(x) & \text{if } x \text{ targets a SimBLE-managed object} \\
+m(x)              & \text{otherwise (passthrough)}
+\end{cases}
+$$$
+
+The hooked surface is the set of CoreBluetooth entry points a central or peripheral app touches:
+
+| Hooked surface | Relayed operation | Passthrough when |
+|---|---|---|
+| `CBCentralManager` scan / connect | `SCAN_START`/`STOP`, `CONNECT`/`DISCONNECT` on the host | not a SimBLE manager |
+| `CBPeripheral` discovery | `DISCOVER_SERVICES` / `DISCOVER_CHARACTERISTICS` | non-managed peripheral |
+| `CBPeripheral` read / write / notify | `READ`/`WRITE_CHARACTERISTIC`, `SET_NOTIFY` | non-managed peripheral |
+| `CBPeripheralManager` advertise / serve | `ADD_SERVICE`, `START_ADVERTISING`, `RESPOND_*`, `UPDATE_VALUE` | non-managed manager |
+| manager `state` | served from the bridged adapter state | non-managed manager |
+
+Because the framework's objects are opaque and cannot be constructed by an app, the interposer
+synthesizes **shadow objects**: stand-in `CBPeripheral`, `CBService`, and `CBCharacteristic`
+instances held in registries keyed by host handle, so later calls resolve without ambiguity and an
+object the interposer did not mint is never claimed. Events returning from the host (a discovery, a
+value update, an incoming read or write request) are translated into the matching delegate callback
+and dispatched on the queue the app supplied to its manager, preserving CoreBluetooth's ordering and
+threading contract.
+
+# The wire protocol
+
+The wire is length-prefixed CBOR. Each message is a 4-byte big-endian length followed by exactly
+that many bytes of a canonical CBOR map. Reading is therefore deterministic: read 4, decode the
+length $ L $, read $ L $.
+
+.mermaid caption:{Frame layout. The prefix makes message boundaries explicit over a byte stream.}
+    flowchart LR
+        P["length prefix\n4 bytes, big-endian"] --> B["CBOR map\nL bytes"]
+        B --> P2["length prefix\n4 bytes"] --> B2["CBOR map\n…"]
+
+For a payload of $ L $ bytes the frame is $ 4 + L $ bytes, and a stream of $ m $ messages with payloads
+$ L_1, \dots, L_m $ occupies
+
+$$$
+S = \sum_{i=1}^{m} \bigl(4 + L_i\bigr) = 4m + \sum_{i=1}^{m} L_i
+$$$
+
+bytes, with the per-message 4-byte cost the only framing overhead. The 32-bit prefix bounds a single
+payload at $ L < 2^{32} $ bytes; the helper enforces a far smaller cap to reject oversized frames
+early.
+
+Maps are **integer-keyed**, not string-keyed, so the contract is compact and stable across the two
+codecs. The protocol is bidirectional: command frames carry an operation such as `SCAN_START` or
+`WRITE_CHARACTERISTIC`, and event frames carry an asynchronous result such as `DISCOVERED`, a value
+update, or an incoming `RESPOND_READ`. Both codecs are written to the same spec and checked against
+each other, so they are byte-identical oracles: a fuzz vector that one accepts the other must accept,
+bit for bit.
+
+.box {Codec parity} type:{tip}
+    The Swift codec (helper) and the C codec (interposer) are not merely compatible; they encode the
+    same logical message to the same bytes. Parity is a test invariant.
+
+# The host bridge
+
+The helper drives the Mac's adapter through the same CoreBluetooth API a macOS app would use. In the
+**central** role it scans, connects, discovers services and characteristics, reads and writes, and
+subscribes to notifications, forwarding each result to the guest as an event. In the **peripheral**
+role it publishes services, advertises, answers read and write requests from a real central, and
+pushes characteristic updates to subscribers. The host owns all live Bluetooth state; the guest's
+shadow objects are projections of it.
+
+A single round of work has a request leg and, for asynchronous Bluetooth, one or more event legs.
+The helper authenticates the token once per session, decodes each command, performs the CoreBluetooth
+operation, and streams events back as they arrive from the controller.
+
+# The end-to-end paths
+
+A central read and a peripheral request are the two shapes the whole protocol composes from.
+
+.mermaid caption:{Central role: a scan-and-read, from guest call to live peripheral and back.}
+    sequenceDiagram
+        autonumber
+        participant App as App (guest)
+        participant Hook as Interposer
+        participant Helper as Helper (host)
+        participant Radio as Adapter + peripheral
+        App->>Hook: scanForPeripherals / readValueForCharacteristic
+        Hook->>Helper: frame(SCAN_START / READ_CHARACTERISTIC)
+        Helper->>Helper: authenticate token, decode CBOR
+        Helper->>Radio: CoreBluetooth scan / read
+        Radio-->>Helper: didDiscover / didUpdateValue
+        Helper-->>Hook: event frame(DISCOVERED / value)
+        Hook-->>App: delegate callback on the app's queue
+
+.mermaid caption:{Peripheral role: an incoming request from a real central, surfaced to the guest.}
+    sequenceDiagram
+        autonumber
+        participant App as App (guest)
+        participant Hook as Interposer
+        participant Helper as Helper (host)
+        participant Central as Real central
+        App->>Hook: startAdvertising / addService
+        Hook->>Helper: frame(ADD_SERVICE / START_ADVERTISING)
+        Helper->>Central: advertise on the real adapter
+        Central-->>Helper: read / write request
+        Helper-->>Hook: event frame(RESPOND_READ / RESPOND_WRITE)
+        Hook-->>App: didReceiveRequest on the app's queue
+        App->>Hook: respondToRequest(result)
+        Hook->>Helper: frame(RESPOND_*)
+        Helper->>Central: CoreBluetooth respond
+
+The work the bridge adds around each operation is constant; the variable cost is the radio, which is
+identical to a device because it is the device's adapter doing it.
+
+# The fence
+
+The fence is the property that makes SimBLE a tool that cannot ship. It is a structural fact plus a
+checked invariant.
+
+Let $ \textsf{Loads}(P) $ be the event that the interposer loads into process $ P $. Loading requires
+two independent conditions:
+
+$$$
+\textsf{Loads}(P) \iff \textsf{Sim}(P) \;\wedge\; \textsf{Inject}(P)
+$$$
+
+where $ \textsf{Sim}(P) $ holds only if $ P $ is a Simulator process, and $ \textsf{Inject}(P) $ holds
+only if `DYLD_INSERT_LIBRARIES` names the dylib in $ P $'s environment.
+
+.grid columns:{2} gap:{1cm}
+    .box {Structural: it is simulator-only} type:{note}
+        Each dylib's Mach-O platform is a Simulator platform (iOS-Simulator, watchOS-Simulator),
+        one slice each. dyld on a real device refuses a simulator-slice binary, so
+        $ \textsf{Sim}(P) = \text{false} $ on hardware no matter where the file sits.
+
+    .box {Configural: it is debug-only} type:{note}
+        A consuming app wires `DYLD_INSERT_LIBRARIES` only in a Debug scheme. A release or archive
+        build sets it nowhere, so $ \textsf{Inject}(P) = \text{false} $ for any production build. On a
+        device, library validation blocks the injection regardless.
+
+For any production build $ P_{\text{prod}} $ both conjuncts fail, so
+
+$$$
+\textsf{Sim}(P_{\text{prod}}) = \text{false} \;\wedge\; \textsf{Inject}(P_{\text{prod}}) = \text{false}
+\;\implies\; \textsf{Loads}(P_{\text{prod}}) = \text{false}
+$$$
+
+CI runs the fence on every change. Today it asserts the static naming and wiring rules: that any
+scheme carrying the variable is Debug-only, that no Xcode project links the dylib into a build, and
+that the variable appears only in a reviewed allowlist. The fence also defines a binary check, that
+every payload the helper carries is a simulator slice and fails closed on any device platform; with
+no interposer binaries in the scaffold, that check has nothing to assert yet.
+
+.mermaid caption:{The fence as a decision: a load survives only the Simulator-and-debug path.}
+    flowchart TD
+        START([dyld asked to load the interposer]) --> Q1{Simulator-slice\nplatform?}
+        Q1 -- "no (device)" --> REJ1[/dyld refuses: wrong platform/]
+        Q1 -- yes --> Q2{DYLD_INSERT set\nby a Debug scheme?}
+        Q2 -- "no (release)" --> REJ2[/nothing to load/]
+        Q2 -- yes --> LOAD([interposer active in the Simulator])
+        REJ1 --> END([cannot reach production])
+        REJ2 --> END
+
+# Automatic arming
+
+The helper arms a booted simulator by setting the injection variables in the simulator's `launchd`
+environment, choosing the interposer slice that matches the simulator's platform, so any app launched
+afterward inherits it with no per-project wiring. The three variables are the loader path, the helper
+port, and the capability token: `DYLD_INSERT_LIBRARIES`, `SIMBLE_PORT`, `SIMBLE_TOKEN`.
+
+.mermaid caption:{Arming lifecycle. Apps launched while armed inherit the injection.}
+    stateDiagram-v2
+        [*] --> Idle
+        Idle --> Armed: helper opens\nset DYLD_INSERT, PORT, TOKEN
+        Armed --> Armed: app launches → injected
+        Armed --> Idle: helper quits\nunset env
+        Armed --> [*]: simulator shuts down
+
+Apps already running are not retroactively injected; the helper is opened before the app.
+
+# Scope and exclusions
+
+v1.0.0 targets real Bluetooth Low Energy devices. The iOS Simulator supports both the central and the
+peripheral role; the watchOS Simulator supports the central and client role. Fake Bluetooth exists
+only behind test interfaces, for deterministic unit tests; the product path is the real adapter.
+
+The following are out of scope for v1.0.0, each for a concrete reason:
+
+| Excluded | Reason |
+|---|---|
+| Pairing and bonding | They derive and persist a long-term link key; excluding them keeps the bridge a transport for application bytes and no key material (see Custody verdict). |
+| ANCS | Apple Notification Center Service is a device-and-companion feature outside the central/peripheral GATT surface the tool bridges. |
+| L2CAP channels | Connection-oriented L2CAP streams are a separate transport from the GATT operations v1 relays. |
+| Background restoration fidelity | State restoration depends on the OS relaunch lifecycle, which the Simulator does not reproduce faithfully. |
+| Production app linkage | Forbidden by the fence: no shipped app may link, bundle, or inject the interposer. |
+| watchOS peripheral mode | The watchOS SDK marks `CBPeripheralManager` unavailable, so the peripheral role cannot be expressed there. |
+| Virtual-device product mode | v1 is a developer bridge to a real adapter, not a synthetic device emulator. |
+
+# A cost model
+
+A Bluetooth operation through SimBLE is the same radio operation as on a device plus a fixed software
+envelope. Decompose the wall-clock cost of one operation:
+
+$$$
+T_{\text{op}} = T_{\text{hook}} + T_{\text{enc}} + T_{\text{ipc}} + T_{\text{radio}} + T_{\text{dec}}
+$$$
+
+$ T_{\text{radio}} $ is the real Bluetooth operation and is identical to a device, governed by the
+connection interval rather than by software. Because a BLE connection interval lies in roughly
+$ [7.5\,\text{ms},\, 4\,\text{s}] $, the radio term is milliseconds to seconds, while the added
+envelope $ T_{\text{hook}} + T_{\text{enc}} + T_{\text{ipc}} + T_{\text{dec}} $ is a microsecond-scale
+codec plus one localhost round trip. The radio therefore dominates the bridge cost. The chart below
+is an illustrative relative-unit budget.
+
+.xychart bars:{yes} x:{Cost component} y:{Relative units}
+    - 2
+    - 3
+    - 4
+    - 40
+    - 3
+
+Reading the bars left to right: hook dispatch, request encode, loopback transit, the radio
+operation, and event decode. The fourth bar, the Bluetooth operation, dominates; the rest is the
+software envelope of relaying it.
+
+.pagebreak
+
+# Summary
+
+SimBLE is a faithful redirect, not a reimplementation. It hooks the guest's CoreBluetooth surface,
+frames each Bluetooth operation as length-prefixed CBOR, and relays it to the host adapter, where the
+radio work happens and the live peripheral state lives. Events return as the same delegate callbacks
+an app receives on a device, the codecs are byte-identical oracles, the bridge carries application
+bytes and no key material, and the interposer is a simulator-only binary wired in debug only, so it
+cannot follow the code into production. The result is the one development affordance the Simulator
+never had: real Bluetooth, where you write the code.
+
+# Colophon
+
+SimBLE is built by **[Nirapod Labs](https://github.com/nirapod-labs)**. It came out of building
+Nirapod, a non-custodial wallet, where the device talks to its surroundings over Bluetooth and that
+path could not be exercised in the Simulator. It was built for that path and open-sourced.
+
+.box type:{tip}
+    **Nirapod Labs** · [github.com/nirapod-labs/simble](https://github.com/nirapod-labs/simble) · Apache-2.0
+
+    This document is written in [Quarkdown](https://quarkdown.com) and compiles from
+    `docs/architecture/simble-architecture.qd`.

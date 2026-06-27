@@ -11,6 +11,7 @@ build-watchsim/
 build-docs/
 dist/
 node_modules/
+quarkdown-output/
 DerivedData/
 *.xcodeproj/
 *.xcworkspace/xcuserdata/
