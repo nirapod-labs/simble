@@ -5,7 +5,11 @@ SPDX-FileCopyrightText: 2026 Nirapod Labs
 
 # interpose
 
-The injected simulator dylib for CoreBluetooth routing.
+The injected simulator dylib that routes a guest app's CoreBluetooth calls to the host.
 
-The scaffold builds placeholder iOS and watchOS simulator slices. The
-Objective-C runtime hooks and shadow object registries are not implemented yet.
+It hooks the CoreBluetooth central surface with Objective-C runtime swizzling, holds a shadow
+registry for the framework's opaque objects, and carries each operation to the helper over the
+loopback transport, delivering host events back as the guest's delegate callbacks. Scan, connect,
+read, write, notify, and RSSI are routed; service and characteristic discovery are not routed in the
+central interposer, and the peripheral role is not implemented. The dylib is a simulator slice,
+loaded only by a debug scheme and never by a shipped app (see `SECURITY.md` for the fence).
