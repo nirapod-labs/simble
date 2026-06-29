@@ -219,10 +219,11 @@ early.
 
 Maps are **integer-keyed**, not string-keyed, so the contract is compact and stable across the two
 codecs. The protocol is bidirectional: command frames carry an operation such as `SCAN_START` or
-`WRITE_CHARACTERISTIC`, and event frames carry an asynchronous result such as `DISCOVERED`, a value
-update, or an incoming `RESPOND_READ`. Both codecs are written to the same spec and checked against
-each other, so they are byte-identical oracles: a fuzz vector that one accepts the other must accept,
-bit for bit.
+`WRITE_CHARACTERISTIC`, and event frames carry an asynchronous result: `CONNECTED` or
+`CONNECT_FAILED` for a connection attempt, `DISCONNECTED` for a drop, `DISCOVERED` for a scan hit, a
+value update for a notification, or an incoming read or write request. Both codecs are written to the
+same spec and checked against each other, so they are byte-identical oracles: a fuzz vector that one
+accepts the other must accept, bit for bit.
 
 .box {Codec parity} type:{tip}
     The Swift codec (helper) and the C codec (interposer) are not merely compatible; they encode the
@@ -237,6 +238,11 @@ role it publishes services, advertises, answers read and write requests from a r
 pushes characteristic updates to subscribers. The host owns all live Bluetooth state; the guest's
 shadow objects are projections of it.
 
+Connection is asynchronous and has no timeout, faithful to CoreBluetooth. A `CONNECT` command
+returns at once and its outcome arrives later as a `CONNECTED` or `CONNECT_FAILED` event that becomes
+`didConnect` or `didFailToConnect` on the app's queue, never a blocking reply. A connection that
+takes seconds, or never completes, therefore cannot stall the guest's calling thread.
+
 A single round of work has a request leg and, for asynchronous Bluetooth, one or more event legs.
 The helper authenticates the token once per session, decodes each command, performs the CoreBluetooth
 operation, and streams events back as they arrive from the controller.
@@ -245,20 +251,26 @@ operation, and streams events back as they arrive from the controller.
 
 A central read and a peripheral request are the two shapes the whole protocol composes from.
 
-.mermaid caption:{Central role: a scan-and-read, from guest call to live peripheral and back.}
+.mermaid caption:{Central role: scan, then an asynchronous connect, from guest call to live peripheral and back.}
     sequenceDiagram
         autonumber
         participant App as App (guest)
         participant Hook as Interposer
         participant Helper as Helper (host)
         participant Radio as Adapter + peripheral
-        App->>Hook: scanForPeripherals / readValueForCharacteristic
-        Hook->>Helper: frame(SCAN_START / READ_CHARACTERISTIC)
-        Helper->>Helper: authenticate token, decode CBOR
-        Helper->>Radio: CoreBluetooth scan / read
-        Radio-->>Helper: didDiscover / didUpdateValue
-        Helper-->>Hook: event frame(DISCOVERED / value)
-        Hook-->>App: delegate callback on the app's queue
+        App->>Hook: scanForPeripherals
+        Hook->>Helper: frame(SCAN_START)
+        Helper->>Radio: CoreBluetooth scan
+        Radio-->>Helper: didDiscover
+        Helper-->>Hook: event frame(DISCOVERED)
+        Hook-->>App: didDiscoverPeripheral (app's queue)
+        App->>Hook: connect(peripheral)
+        Hook->>Helper: frame(CONNECT)
+        Note over Hook,Helper: returns at once, no blocking reply
+        Helper->>Radio: CoreBluetooth connect
+        Radio-->>Helper: didConnect
+        Helper-->>Hook: event frame(CONNECTED)
+        Hook-->>App: didConnectPeripheral (app's queue)
 
 .mermaid caption:{Peripheral role: an incoming request from a real central, surfaced to the guest.}
     sequenceDiagram
@@ -271,10 +283,10 @@ A central read and a peripheral request are the two shapes the whole protocol co
         Hook->>Helper: frame(ADD_SERVICE / START_ADVERTISING)
         Helper->>Central: advertise on the real adapter
         Central-->>Helper: read / write request
-        Helper-->>Hook: event frame(RESPOND_READ / RESPOND_WRITE)
-        Hook-->>App: didReceiveRequest on the app's queue
-        App->>Hook: respondToRequest(result)
-        Hook->>Helper: frame(RESPOND_*)
+        Helper-->>Hook: event frame(READ_REQUEST / WRITE_REQUEST)
+        Hook-->>App: didReceiveRead / didReceiveWrite on the app's queue
+        App->>Hook: respond(result)
+        Hook->>Helper: frame(RESPOND_READ / RESPOND_WRITE)
         Helper->>Central: CoreBluetooth respond
 
 The work the bridge adds around each operation is constant; the variable cost is the radio, which is
@@ -313,11 +325,12 @@ $$$
 \;\implies\; \textsf{Loads}(P_{\text{prod}}) = \text{false}
 $$$
 
-CI runs the fence on every change. Today it asserts the static naming and wiring rules: that any
-scheme carrying the variable is Debug-only, that no Xcode project links the dylib into a build, and
-that the variable appears only in a reviewed allowlist. The fence also defines a binary check, that
-every payload the helper carries is a simulator slice and fails closed on any device platform; with
-no interposer binaries in the scaffold, that check has nothing to assert yet.
+CI runs the fence on every change. It asserts the static naming and wiring rules: that any scheme
+carrying the variable is Debug-only, that no Xcode project links the dylib into a build, and that the
+variable appears only in a reviewed allowlist. The fence also defines a binary bundle check, that
+every interposer the helper carries is a simulator slice and fails closed on any device platform; the
+release workflow runs it against the built `.app`, where it is a placeholder pending the full
+slice-platform assertion.
 
 .mermaid caption:{The fence as a decision: a load survives only the Simulator-and-debug path.}
     flowchart TD
@@ -336,15 +349,25 @@ environment, choosing the interposer slice that matches the simulator's platform
 afterward inherits it with no per-project wiring. The three variables are the loader path, the helper
 port, and the capability token: `DYLD_INSERT_LIBRARIES`, `SIMBLE_PORT`, `SIMBLE_TOKEN`.
 
+The helper re-arms the booted simulators on a short interval, so a simulator booted, rebooted, or
+cleared after the helper started is armed within seconds, not only at helper startup. Arming composes
+the shared `DYLD_INSERT_LIBRARIES` list rather than overwriting it: the helper appends its own slice,
+matched by file name, and on teardown removes only its own entry, so an independent injection tool's
+slice in the same list survives and the two coexist. For a single Xcode scheme instead of automatic
+arming, the helper also exposes the same three variables as a copyable scheme environment to paste
+into the scheme.
+
 .mermaid caption:{Arming lifecycle. Apps launched while armed inherit the injection.}
     stateDiagram-v2
         [*] --> Idle
         Idle --> Armed: helper opens\nset DYLD_INSERT, PORT, TOKEN
         Armed --> Armed: app launches → injected
-        Armed --> Idle: helper quits\nunset env
+        Armed --> Armed: re-arm tick\nsim booted later
+        Armed --> Idle: helper quits\nremove own slice
         Armed --> [*]: simulator shuts down
 
-Apps already running are not retroactively injected; the helper is opened before the app.
+An app already running is not retroactively injected; injection happens when an app launches into an
+armed simulator.
 
 # Scope and exclusions
 
