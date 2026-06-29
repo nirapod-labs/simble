@@ -217,6 +217,106 @@ simble_status simble_client_read_rssi(const uint8_t *peripheral_id, size_t perip
                                       simble_response *out);
 
 /**
+ * @brief Publish a GATT service with its characteristics.
+ *
+ * The characteristic UUIDs, properties, and permissions are three parallel arrays of @p char_count
+ * entries, one per characteristic.
+ *
+ * @param[in]  service        Service UUID, UTF-8.
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  is_primary     Non-zero marks the service primary.
+ * @param[in]  char_uuids     Characteristic UUID strings.
+ * @param[in]  char_uuid_lens Per-UUID lengths, parallel to @p char_uuids.
+ * @param[in]  properties     Per-characteristic CBCharacteristicProperties.
+ * @param[in]  permissions    Per-characteristic CBAttributePermissions.
+ * @param[in]  char_count     Characteristic count.
+ * @param[out] out            The decoded response; ::SIMBLE_RESP_SERVICE on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_add_service(const char *service, size_t service_len, int is_primary,
+                                        const char *const *char_uuids, const size_t *char_uuid_lens,
+                                        const uint64_t *properties, const uint64_t *permissions,
+                                        size_t char_count, simble_response *out);
+
+/**
+ * @brief Remove a published service named by its UUID.
+ *
+ * @param[in]  service     Service UUID, UTF-8.
+ * @param[in]  service_len Length of @p service.
+ * @param[out] out         The decoded response; ::SIMBLE_RESP_SERVICE on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_remove_service(const char *service, size_t service_len,
+                                           simble_response *out);
+
+/**
+ * @brief Begin advertising, optionally a local name and a set of service UUIDs.
+ *
+ * @param[in]  local_name     Advertised local name, UTF-8, or NULL.
+ * @param[in]  local_name_len Length of @p local_name; 0 omits it.
+ * @param[in]  uuids          Advertised service UUID strings, or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits the list.
+ * @param[out] out            The decoded response; ::SIMBLE_RESP_CONFIRMED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_start_advertising(const char *local_name, size_t local_name_len,
+                                              const char *const *uuids, const size_t *uuid_lens,
+                                              size_t uuid_count, simble_response *out);
+
+/**
+ * @brief End advertising.
+ *
+ * @param[out] out The decoded response; ::SIMBLE_RESP_CONFIRMED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_stop_advertising(simble_response *out);
+
+/**
+ * @brief Answer an incoming read request with a value and an ATT result.
+ *
+ * @param[in]  request_id Request id from the READ_REQUEST event.
+ * @param[in]  value      Value bytes to return.
+ * @param[in]  value_len  Length of @p value.
+ * @param[in]  att_error  ATT result code; 0 is success.
+ * @param[out] out        The decoded response; ::SIMBLE_RESP_CONFIRMED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_respond_read(uint64_t request_id, const uint8_t *value, size_t value_len,
+                                         uint64_t att_error, simble_response *out);
+
+/**
+ * @brief Answer an incoming write request with an ATT result.
+ *
+ * @param[in]  request_id Request id from the WRITE_REQUEST event.
+ * @param[in]  att_error  ATT result code; 0 is success.
+ * @param[out] out        The decoded response; ::SIMBLE_RESP_CONFIRMED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_respond_write(uint64_t request_id, uint64_t att_error,
+                                          simble_response *out);
+
+/**
+ * @brief Push a new characteristic value to subscribers.
+ *
+ * @param[in]  service        Service UUID, UTF-8.
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  characteristic Characteristic UUID, UTF-8.
+ * @param[in]  char_len       Length of @p characteristic.
+ * @param[in]  value          New value bytes.
+ * @param[in]  value_len      Length of @p value.
+ * @param[in]  central_id     Target central id, or NULL to reach every subscriber.
+ * @param[in]  central_len    Length of @p central_id; 0 omits it.
+ * @param[out] out            The decoded response; ::SIMBLE_RESP_CONFIRMED on success.
+ * @return ::SIMBLE_OK when a response decoded cleanly, a ::simble_status error otherwise.
+ */
+simble_status simble_client_update_value(const char *service, size_t service_len,
+                                         const char *characteristic, size_t char_len,
+                                         const uint8_t *value, size_t value_len,
+                                         const uint8_t *central_id, size_t central_len,
+                                         simble_response *out);
+
+/**
  * @brief Open a connection to the helper, for a path that reads events after sending a request.
  *
  * The hooks use the one-shot request functions for directed operations; the event stream the

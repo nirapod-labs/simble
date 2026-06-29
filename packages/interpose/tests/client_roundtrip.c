@@ -216,6 +216,22 @@ static size_t build_response(uint64_t op, uint8_t *out) {
     n += put_head(out + n, 0, 34);
     n += put_head(out + n, 1, 49); // CBOR negint 49 encodes -50
     return n;
+  case 14: // ADD_SERVICE: { 0:14, 1:0, 31:svc }
+  case 15: // REMOVE_SERVICE: { 0:15, 1:0, 31:svc }
+    n += put_head(out + n, 5, 3);
+    n += put_kv_uint(out + n, 0, op);
+    n += put_kv_uint(out + n, 1, 0);
+    n += put_kv_text(out + n, 31, "180D");
+    return n;
+  case 16: // START_ADVERTISING: { 0:16, 1:0 }
+  case 17: // STOP_ADVERTISING: { 0:17, 1:0 }
+  case 18: // RESPOND_READ: { 0:18, 1:0 }
+  case 19: // RESPOND_WRITE: { 0:19, 1:0 }
+  case 20: // UPDATE_VALUE: { 0:20, 1:0 }
+    n += put_head(out + n, 5, 2);
+    n += put_kv_uint(out + n, 0, op);
+    n += put_kv_uint(out + n, 1, 0);
+    return n;
   default:
     return 0;
   }
@@ -263,7 +279,7 @@ static void *server_thread(void *arg) {
   pthread_mutex_unlock(&ctx->lock);
 
   // Serve one connection per directed request, then one connection that carries an event.
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 17; i++) {
     int fd = accept(listen_fd, NULL, NULL);
     if (fd < 0)
       break;
@@ -351,6 +367,38 @@ int main(void) {
   CHECK(simble_client_disconnect(kPeripheralId, sizeof(kPeripheralId), &resp) == SIMBLE_OK &&
             resp.kind == SIMBLE_RESP_PERIPHERAL,
         "disconnect echoes the peripheral id");
+
+  // The peripheral one-shot requests: publish, advertise, respond, notify.
+  const char *charUUID = "2A37";
+  const size_t charLen = 4;
+  const uint64_t props[] = {0x02}; // CBCharacteristicPropertyRead
+  const uint64_t perms[] = {0x01}; // CBAttributePermissionsReadable
+  CHECK(simble_client_add_service("180D", 4, 1, &charUUID, &charLen, props, perms, 1, &resp) ==
+            SIMBLE_OK && resp.kind == SIMBLE_RESP_SERVICE,
+        "add service confirmed");
+  CHECK(simble_client_remove_service("180D", 4, &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_SERVICE,
+        "remove service confirmed");
+
+  const char *advUUID = "180D";
+  const size_t advLen = 4;
+  CHECK(simble_client_start_advertising("Sim", 3, &advUUID, &advLen, 1, &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_CONFIRMED,
+        "start advertising confirmed");
+  CHECK(simble_client_stop_advertising(&resp) == SIMBLE_OK && resp.kind == SIMBLE_RESP_CONFIRMED,
+        "stop advertising confirmed");
+
+  const uint8_t readValue[] = {0x42};
+  CHECK(simble_client_respond_read(7, readValue, sizeof(readValue), 0, &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_CONFIRMED,
+        "respond read confirmed");
+  CHECK(simble_client_respond_write(8, 0, &resp) == SIMBLE_OK && resp.kind == SIMBLE_RESP_CONFIRMED,
+        "respond write confirmed");
+
+  const uint8_t notifyValue[] = {0x48, 0x69};
+  CHECK(simble_client_update_value("180D", 4, "2A37", 4, notifyValue, sizeof(notifyValue), NULL, 0,
+                                   &resp) == SIMBLE_OK && resp.kind == SIMBLE_RESP_CONFIRMED,
+        "update value confirmed");
 
   // The event stream: open a connection and read one DISCOVERED event.
   simble_conn conn;

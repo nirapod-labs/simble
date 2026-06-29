@@ -21,15 +21,18 @@
 
 #import "../registry/shadow.h"
 #import "../transport/client.h"
+#import "hooks_internal.h"
 #import "simble_interpose.h"
 
 #import <CoreBluetooth/CoreBluetooth.h>
 #import <objc/runtime.h>
 #import <pthread.h>
 
-static simble_hook_stats g_stats = {0, 0, 0, 0, 0, 0, 0};
+static simble_hook_stats g_stats = {0};
 static pthread_mutex_t g_install_lock = PTHREAD_MUTEX_INITIALIZER;
 static int g_installed = 0;
+
+simble_hook_stats *simble_internal_stats(void) { return &g_stats; }
 
 // The guest's bundle id and display name, for the HELLO the helper shows. Guest-reported,
 // names the app, gates nothing.
@@ -154,8 +157,8 @@ static void deliverEvent(CBCentralManager *manager, const simble_event *event) {
     break;
   }
   default:
-    // A peripheral-role event is not delivered by the central interposer; the peripheral role
-    // is not implemented here.
+    // A peripheral-role event routes to the peripheral delivery path.
+    simble_deliver_peripheral_event(event);
     break;
   }
 }
@@ -198,10 +201,10 @@ typedef struct {
   SEL replacement;
 } SwizzlePair;
 
-static SwizzlePair g_pairs[16];
+static SwizzlePair g_pairs[24];
 static size_t g_pair_count = 0;
 
-static int swizzle(Class cls, SEL original, SEL replacement) {
+int simble_swizzle(Class cls, SEL original, SEL replacement) {
   Method origMethod = class_getInstanceMethod(cls, original);
   Method replMethod = class_getInstanceMethod(cls, replacement);
   if (!origMethod || !replMethod)
@@ -621,29 +624,31 @@ int simble_install_hooks(void) {
   }
   int failures = 0;
   Class managerClass = [CBCentralManager class];
-  failures += swizzle(managerClass, @selector(initWithDelegate:queue:),
-                      @selector(simble_initWithDelegate:queue:));
-  failures += swizzle(managerClass, @selector(state), @selector(simble_state));
-  failures += swizzle(managerClass, @selector(scanForPeripheralsWithServices:options:),
-                      @selector(simble_scanForPeripheralsWithServices:options:));
-  failures += swizzle(managerClass, @selector(stopScan), @selector(simble_stopScan));
-  failures += swizzle(managerClass, @selector(connectPeripheral:options:),
-                      @selector(simble_connectPeripheral:options:));
-  failures += swizzle(managerClass, @selector(cancelPeripheralConnection:),
-                      @selector(simble_cancelPeripheralConnection:));
+  failures += simble_swizzle(managerClass, @selector(initWithDelegate:queue:),
+                             @selector(simble_initWithDelegate:queue:));
+  failures += simble_swizzle(managerClass, @selector(state), @selector(simble_state));
+  failures += simble_swizzle(managerClass, @selector(scanForPeripheralsWithServices:options:),
+                             @selector(simble_scanForPeripheralsWithServices:options:));
+  failures += simble_swizzle(managerClass, @selector(stopScan), @selector(simble_stopScan));
+  failures += simble_swizzle(managerClass, @selector(connectPeripheral:options:),
+                             @selector(simble_connectPeripheral:options:));
+  failures += simble_swizzle(managerClass, @selector(cancelPeripheralConnection:),
+                             @selector(simble_cancelPeripheralConnection:));
 
   Class peripheralClass = [CBPeripheral class];
-  failures +=
-      swizzle(peripheralClass, @selector(discoverServices:), @selector(simble_discoverServices:));
-  failures += swizzle(peripheralClass, @selector(discoverCharacteristics:forService:),
-                      @selector(simble_discoverCharacteristics:forService:));
-  failures += swizzle(peripheralClass, @selector(readValueForCharacteristic:),
-                      @selector(simble_readValueForCharacteristic:));
-  failures += swizzle(peripheralClass, @selector(writeValue:forCharacteristic:type:),
-                      @selector(simble_writeValue:forCharacteristic:type:));
-  failures += swizzle(peripheralClass, @selector(setNotifyValue:forCharacteristic:),
-                      @selector(simble_setNotifyValue:forCharacteristic:));
-  failures += swizzle(peripheralClass, @selector(readRSSI), @selector(simble_readRSSI));
+  failures += simble_swizzle(peripheralClass, @selector(discoverServices:),
+                             @selector(simble_discoverServices:));
+  failures += simble_swizzle(peripheralClass, @selector(discoverCharacteristics:forService:),
+                             @selector(simble_discoverCharacteristics:forService:));
+  failures += simble_swizzle(peripheralClass, @selector(readValueForCharacteristic:),
+                             @selector(simble_readValueForCharacteristic:));
+  failures += simble_swizzle(peripheralClass, @selector(writeValue:forCharacteristic:type:),
+                             @selector(simble_writeValue:forCharacteristic:type:));
+  failures += simble_swizzle(peripheralClass, @selector(setNotifyValue:forCharacteristic:),
+                             @selector(simble_setNotifyValue:forCharacteristic:));
+  failures += simble_swizzle(peripheralClass, @selector(readRSSI), @selector(simble_readRSSI));
+
+  failures += simble_install_peripheral_hooks();
 
   g_installed = (failures == 0);
   pthread_mutex_unlock(&g_install_lock);

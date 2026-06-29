@@ -9,8 +9,9 @@
  *
  * @details
  * The host has the CoreBluetooth classes the swizzles target, so a plain ctest can install
- * every swizzle, confirm none failed, and uninstall, with no radio and no helper. The
- * version entry point is checked too.
+ * every central and peripheral swizzle, confirm none failed, and uninstall, with no radio and no
+ * helper. The version entry point is checked too. A non-zero install count means some selector,
+ * central or peripheral, did not swizzle.
  *
  * @author Nirapod Labs
  * @date 2026
@@ -23,6 +24,11 @@
 
 int main(void) {
   assert(simble_interpose_version() == 1);
+
+  // The counters start at zero before any routed call.
+  simble_hook_stats fresh = simble_get_hook_stats();
+  assert(fresh.add_service == 0 && fresh.start_advertising == 0 && fresh.respond == 0 &&
+         fresh.update_value == 0 && fresh.peripheral_event == 0);
 
   int failures = simble_install_hooks();
   printf("install: %d swizzle(s) failed\n", failures);

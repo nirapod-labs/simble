@@ -9,15 +9,16 @@ endif()
 
 set(SIMBLE_FRAMEWORKS "-framework CoreBluetooth" "-framework Foundation")
 
-# The interposer core: the central swizzles, the shadow registry, and the loopback transport.
-# No load constructor here; the dylib and the host harness add their own entry point, so both
-# reuse this. The .m files use ARC.
+# The interposer core: the central and peripheral swizzles, the shadow registry, and the loopback
+# transport. No load constructor here; the dylib and the host harness add their own entry point, so
+# both reuse this. The .m files use ARC.
 add_library(interpose_core STATIC
   src/hooks/central_hooks.m
+  src/hooks/peripheral_hooks.m
   src/registry/shadow.m
   src/transport/client.c
 )
-target_include_directories(interpose_core PUBLIC include src/transport src/registry)
+target_include_directories(interpose_core PUBLIC include src/transport src/registry src/hooks)
 target_compile_options(interpose_core PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
 target_link_libraries(interpose_core PUBLIC simble_protocol_c ${SIMBLE_FRAMEWORKS})
 
