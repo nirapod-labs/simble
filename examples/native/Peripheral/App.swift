@@ -114,6 +114,7 @@ final class PeripheralServer: NSObject, @preconcurrency CBPeripheralManagerDeleg
 
   private func append(_ text: String) {
     log.insert(LogLine(text: text), at: 0)
+    FileHandle.standardError.write(Data("[simble-example] \(text)\n".utf8))
   }
 
   // MARK: CBPeripheralManagerDelegate
