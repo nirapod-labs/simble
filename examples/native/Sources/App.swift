@@ -1,67 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Nirapod Labs
 
-import CoreBluetooth
 import SwiftUI
 
-/// The iOS example: one app with a Central tab and a Peripheral tab. The Central tab scans, lists
-/// peripherals, connects, and reads a characteristic; the Peripheral tab publishes a service,
-/// advertises, and serves reads, writes, and notifications. In the iOS Simulator armed by the SimBLE
-/// helper, both reach the host Mac's radio; on a device they drive the device radio.
+/// An interactive Bluetooth Low Energy console. The Central tab scans, connects, reads, writes,
+/// and subscribes; the Peripheral tab publishes a configurable GATT service, advertises, and
+/// serves it; the History tab is the unified trail. Results land with haptic and toast feedback.
+/// Each call is the real native one; the same actions run unchanged on a device, and in the
+/// Simulator armed by the SimBLE helper they reach the host Mac's radio.
 ///
 /// Launch environment (read at startup, all optional):
 ///   SIMBLE_AUTOSCAN       central starts scanning when it reaches poweredOn.
 ///   SIMBLE_AUTOADVERTISE  peripheral starts advertising when it reaches poweredOn.
-///   SIMBLE_TAB=peripheral open on the Peripheral tab (default Central).
+///   SIMBLE_TAB            open on "peripheral" or "history" (default central).
+///   SIMBLE_DEMO_SEED      publish, advertise, and bump the counter at launch for screenshots.
 @main
 struct SimBLEExampleApp: App {
-  @State private var selection: Role = launchTab()
-
   var body: some Scene {
-    WindowGroup {
-      TabView(selection: $selection) {
-        CentralView(autoScan: launchFlag("SIMBLE_AUTOSCAN"))
-          .tabItem { Label("Central", systemImage: "antenna.radiowaves.left.and.right") }
-          .tag(Role.central)
-        PeripheralView(autoAdvertise: launchFlag("SIMBLE_AUTOADVERTISE"))
-          .tabItem { Label("Peripheral", systemImage: "dot.radiowaves.left.and.right") }
-          .tag(Role.peripheral)
-      }
-    }
+    WindowGroup { RootView() }
   }
 }
 
-/// Which role tab is shown.
-enum Role {
-  case central
-  case peripheral
-}
+struct RootView: View {
+  @State private var console = BLEConsole()
+  @State private var tab = Self.initialTab
 
-/// The tab to open from SIMBLE_TAB; central unless it is "peripheral".
-func launchTab() -> Role {
-  ProcessInfo.processInfo.environment["SIMBLE_TAB"] == "peripheral" ? .peripheral : .central
+  var body: some View {
+    @Bindable var console = console
+    TabView(selection: $tab) {
+      CentralTab().tag(0)
+        .tabItem { Label("Central", systemImage: "antenna.radiowaves.left.and.right") }
+      PeripheralTab().tag(1)
+        .tabItem { Label("Peripheral", systemImage: "dot.radiowaves.left.and.right") }
+      HistoryTab().tag(2)
+        .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+    }
+    .tint(.blue)
+    .environment(console)
+    .toast($console.toast)
+    .sensoryFeedback(.success, trigger: console.successTick)
+    .sensoryFeedback(.error, trigger: console.errorTick)
+    .task {
+      if ProcessInfo.processInfo.environment["SIMBLE_DEMO_SEED"] == "1" { console.seedDemo() }
+    }
+  }
+
+  private static var initialTab: Int {
+    switch ProcessInfo.processInfo.environment["SIMBLE_TAB"] {
+    case "peripheral": 1
+    case "history": 2
+    default: 0
+    }
+  }
 }
 
 /// Whether launch environment variable `name` is set (present, non-empty).
 func launchFlag(_ name: String) -> Bool {
   guard let value = ProcessInfo.processInfo.environment[name] else { return false }
   return !value.isEmpty
-}
-
-/// One log line, identified for a list. Shared by both roles.
-struct LogLine: Identifiable {
-  let id = UUID()
-  let text: String
-}
-
-/// A human-readable name for a CoreBluetooth manager state. Shared by both roles.
-func describe(_ state: CBManagerState) -> String {
-  switch state {
-  case .poweredOn: "Powered on"
-  case .poweredOff: "Powered off"
-  case .unauthorized: "Unauthorized"
-  case .unsupported: "Unsupported"
-  case .resetting: "Resetting"
-  default: "Unknown"
-  }
 }
