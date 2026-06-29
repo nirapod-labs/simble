@@ -85,14 +85,15 @@ final class CommandTests: XCTestCase {
     let result = SimBLECTL.handle(arguments: ["simblectl", "disarm"], arming: arming(runner))
     XCTAssertEqual(result.exitCode, 0)
     XCTAssertEqual(result.output, #"{"disarmed":["IOS-BOOT","WATCH-BOOT"]}"#)
+    // No slice is built here, so the shared insert list holds nothing of ours. Disarm clears only
+    // the namespaced port and token; the unset set excludes the shared insert variable, which a
+    // peer tool may own.
     for udid in ["IOS-BOOT", "WATCH-BOOT"] {
       let spawns = runner.envCalls.filter { $0.contains(udid) }
-      XCTAssertEqual(spawns.count, 3)
-      for spawn in spawns {
-        XCTAssertEqual(spawn.prefix(4), ["spawn", udid, "launchctl", "unsetenv"])
-      }
-      XCTAssertTrue(spawns.contains { $0.last == "SIMBLE_PORT" })
-      XCTAssertTrue(spawns.contains { $0.last == "SIMBLE_TOKEN" })
+      let unset = Set(spawns
+        .filter { $0.count >= 5 && $0.prefix(4) == ["spawn", udid, "launchctl", "unsetenv"] }
+        .map { $0[4] })
+      XCTAssertEqual(unset, ["SIMBLE_PORT", "SIMBLE_TOKEN"])
     }
   }
 

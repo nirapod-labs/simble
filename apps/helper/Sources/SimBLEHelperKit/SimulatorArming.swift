@@ -157,12 +157,14 @@ public struct SimulatorArming: Sendable {
   /// are ours to unset.
   public func disarm() {
     for sim in bootedSimulators() {
-      if let slice = locator.slicePath(for: sim.platform) {
-        let current = simulatorEnv(sim.udid, Self.injectVariable)
-        let remaining = InjectionEnv.removed(current: current, removing: slice)
+      // Remove by the platform's canonical slice name, not a locator-resolved path: teardown must
+      // succeed even when the slice file has moved or been deleted since arming. Only write the
+      // shared list when it actually carries our entry, leaving a peer tool's alone.
+      if let current = simulatorEnv(sim.udid, Self.injectVariable) {
+        let remaining = InjectionEnv.removed(current: current, removing: sim.platform.sliceName)
         if remaining.isEmpty {
           _ = runner.run(["spawn", sim.udid, "launchctl", "unsetenv", Self.injectVariable])
-        } else if remaining != (current ?? "") {
+        } else if remaining != current {
           _ = runner.run(["spawn", sim.udid, "launchctl", "setenv", Self.injectVariable, remaining])
         }
       }
