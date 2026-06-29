@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/nirapod-labs/simble/security/advisories/new
+    about: Report a security vulnerability privately, not as a public issue.
