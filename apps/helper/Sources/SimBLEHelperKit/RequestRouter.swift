@@ -15,19 +15,20 @@ enum BridgeErrorCode {
 }
 
 /// Turns a request into a response by driving the central service or the peripheral
-/// service, behind the capability-token gate, and streams both services' events to the
+/// service, behind the capability-token gate, and streams both services' events to every
 /// connected client. One service of each role is shared across connections; the listener
-/// attaches a per-connection event sink for the duration of a connection.
+/// registers a per-connection event sink for the duration of a connection.
 public final class RequestRouter: @unchecked Sendable {
   private let service: CentralService
   private let peripheralService: PeripheralService
   private let gate: AuthGate
   private let sinkLock = NSLock()
-  private var eventSink: (@Sendable (Event) -> Void)?
+  private var eventSinks: [UInt64: @Sendable (Event) -> Void] = [:]
+  private var nextSinkID: UInt64 = 0
 
   /// Build the router over the central service, the peripheral service, and the token
-  /// gate. The router installs each service's event sink once and forwards every event
-  /// to the attached connection.
+  /// gate. The router installs each service's event sink once and fans every event out to
+  /// the registered connections.
   public init(service: CentralService, peripheralService: PeripheralService, gate: AuthGate) {
     self.service = service
     self.peripheralService = peripheralService
@@ -35,26 +36,28 @@ public final class RequestRouter: @unchecked Sendable {
     let forward: @Sendable (Event) -> Void = { [weak self] event in
       guard let self else { return }
       sinkLock.lock()
-      let sink = eventSink
+      let sinks = Array(eventSinks.values)
       sinkLock.unlock()
-      sink?(event)
+      for sink in sinks { sink(event) }
     }
     service.onEvent(forward)
     peripheralService.onEvent(forward)
   }
 
-  /// Route both services' events to `sink` for the life of one connection. The
-  /// listener attaches before serving and detaches after.
-  public func attachEventSink(_ sink: @escaping @Sendable (Event) -> Void) {
+  /// Register `sink` to receive both services' events. Returns the id that removes it.
+  public func attachEventSink(_ sink: @escaping @Sendable (Event) -> Void) -> UInt64 {
     sinkLock.lock()
-    eventSink = sink
+    let id = nextSinkID
+    nextSinkID += 1
+    eventSinks[id] = sink
     sinkLock.unlock()
+    return id
   }
 
-  /// Stop routing events to the connection's sink.
-  public func detachEventSink() {
+  /// Remove the sink registered under `id`.
+  public func detachEventSink(_ id: UInt64) {
     sinkLock.lock()
-    eventSink = nil
+    eventSinks[id] = nil
     sinkLock.unlock()
   }
 
