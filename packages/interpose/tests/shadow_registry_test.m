@@ -94,8 +94,71 @@ int main(void) {
     CHECK(simble_shadow_service((CBPeripheral *)manager, serviceUUID) == nil,
           "a service on a non-minted peripheral fails closed");
 
+    // A peripheral manager is managed once registered, and resolves to the latest entry.
+    CBPeripheralManager *pManager = [CBPeripheralManager alloc];
+    CHECK(!simble_shadow_is_managed_peripheral_manager(pManager),
+          "an unregistered peripheral manager is not managed");
+    simble_shadow_register_peripheral_manager(pManager, nil, nil);
+    CHECK(simble_shadow_is_managed_peripheral_manager(pManager),
+          "a registered peripheral manager is managed");
+    CHECK(simble_shadow_peripheral_manager_entry() != nil,
+          "the registered peripheral manager entry resolves");
+
+    // A tracked service resolves its characteristics back by UUID.
+    CBUUID *pServiceUUID = [CBUUID UUIDWithString:@"180F"];
+    CBUUID *pCharUUID = [CBUUID UUIDWithString:@"2A19"];
+    CBMutableCharacteristic *mutableChar =
+        [[CBMutableCharacteristic alloc] initWithType:pCharUUID
+                                           properties:CBCharacteristicPropertyRead
+                                                value:nil
+                                          permissions:CBAttributePermissionsReadable];
+    CBMutableService *mutableService = [[CBMutableService alloc] initWithType:pServiceUUID
+                                                                      primary:YES];
+    mutableService.characteristics = @[ mutableChar ];
+    simble_shadow_track_service(mutableService);
+    CHECK(simble_shadow_tracked_characteristic(pServiceUUID, pCharUUID) == mutableChar,
+          "a tracked characteristic resolves by service and characteristic uuid");
+    CHECK([simble_shadow_tracked_service_uuids() containsObject:pServiceUUID.UUIDString],
+          "a tracked service uuid is listed");
+    simble_shadow_untrack_service(pServiceUUID);
+    CHECK(simble_shadow_tracked_characteristic(pServiceUUID, pCharUUID) == nil,
+          "an untracked characteristic no longer resolves");
+
+    // One central stand-in per host identifier, and the id round-trips.
+    const uint8_t centralBytes[] = {0xca, 0xfe};
+    CBCentral *c1 = simble_shadow_central(centralBytes, sizeof(centralBytes), 185);
+    CBCentral *c2 = simble_shadow_central(centralBytes, sizeof(centralBytes), 185);
+    CHECK(c1 != nil && c1 == c2, "one central stand-in per identifier");
+    uint8_t cidOut[64];
+    size_t cidLen = 0;
+    CHECK(simble_shadow_central_id(c1, cidOut, sizeof(cidOut), &cidLen) &&
+              cidLen == sizeof(centralBytes) && memcmp(cidOut, centralBytes, cidLen) == 0,
+          "the central id round-trips");
+
+    // An ATT request carries its request id and write flag back to the responder.
+    CBATTRequest *readReq =
+        simble_shadow_att_request(42, NO, mutableChar, c1, 0, NULL, 0);
+    uint64_t reqId = 0;
+    BOOL isWrite = YES;
+    CHECK(simble_shadow_request_id(readReq, &reqId, &isWrite) && reqId == 42 && isWrite == NO,
+          "a read request carries its id and a clear write flag");
+    const uint8_t writeVal[] = {0x07};
+    CBATTRequest *writeReq =
+        simble_shadow_att_request(43, YES, mutableChar, c1, 2, writeVal, sizeof(writeVal));
+    CHECK(simble_shadow_request_id(writeReq, &reqId, &isWrite) && reqId == 43 && isWrite == YES,
+          "a write request carries its id and a set write flag");
+    CHECK(writeReq.value.length == sizeof(writeVal) &&
+              ((const uint8_t *)writeReq.value.bytes)[0] == 0x07,
+          "the write request carries the write value");
+
+    // Fail closed: a request the registry never minted does not resolve.
+    CHECK(!simble_shadow_request_id((CBATTRequest *)manager, &reqId, &isWrite),
+          "a non-minted object is not a managed request");
+
     simble_shadow_reset();
     CHECK(!simble_shadow_is_managed_manager(manager), "reset drops every registration");
+    CHECK(!simble_shadow_is_managed_peripheral_manager(pManager),
+          "reset drops the peripheral manager registration");
   }
 
   printf(fails ? "SHADOW REGISTRY: %d failure(s)\n" : "SHADOW REGISTRY: ok\n", fails);

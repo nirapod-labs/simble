@@ -34,10 +34,10 @@ extern "C" {
 int simble_interpose_version(void);
 
 /**
- * @brief Install the CoreBluetooth central swizzles.
+ * @brief Install the CoreBluetooth central and peripheral swizzles.
  *
- * Exchanges the CBCentralManager and CBPeripheral method implementations for the routed
- * ones. Idempotent: a second call is a no-op while the swizzles are installed.
+ * Exchanges the CBCentralManager, CBPeripheral, and CBPeripheralManager method implementations for
+ * the routed ones. Idempotent: a second call is a no-op while the swizzles are installed.
  *
  * @return The number of selectors that could not be swizzled; 0 means every one is in place.
  */
@@ -50,7 +50,7 @@ int simble_install_hooks(void);
  */
 void simble_uninstall_hooks(void);
 
-/** How many times each routed central operation has fired since install. */
+/** How many times each routed operation has fired since install. */
 typedef struct {
   int scan_start;               ///< scanForPeripheralsWithServices:options: calls routed.
   int connect;                  ///< connectPeripheral:options: calls routed to the helper.
@@ -59,6 +59,12 @@ typedef struct {
   int read;                     ///< readValueForCharacteristic: calls routed to the helper.
   int write;                    ///< writeValue:forCharacteristic:type: calls routed.
   int set_notify;               ///< setNotifyValue:forCharacteristic: calls routed.
+  int add_service;              ///< addService: calls routed to the helper.
+  int remove_service;           ///< removeService: and removeAllServices: calls routed.
+  int start_advertising;        ///< startAdvertising: calls routed to the helper.
+  int respond;                  ///< respondToRequest:withResult: calls routed.
+  int update_value;             ///< updateValue:forCharacteristic:onSubscribedCentrals: calls routed.
+  int peripheral_event;         ///< peripheral events delivered to the guest delegate.
 } simble_hook_stats;
 
 /**

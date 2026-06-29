@@ -59,6 +59,25 @@ int main(void) {
     simble_hook_stats end = simble_get_hook_stats();
     CHECK(start.scan_start == end.scan_start, "a non-managed scan does not count as routed");
 
+    // The peripheral surface gates on the same registry predicate: a stray peripheral manager is
+    // not managed, a registered one is.
+    CBPeripheralManager *strayPeripheral = [CBPeripheralManager alloc];
+    CHECK(!simble_shadow_is_managed_peripheral_manager(strayPeripheral),
+          "a stray peripheral manager is not managed");
+
+    // A managed peripheral manager routes addService:, moving the counter. The transport call fails
+    // closed without a helper; the route still fired.
+    CBMutableService *service =
+        [[CBMutableService alloc] initWithType:[CBUUID UUIDWithString:@"180D"] primary:YES];
+    CBPeripheralManager *managedPeripheral = [CBPeripheralManager alloc];
+    simble_shadow_register_peripheral_manager(managedPeripheral, nil, nil);
+    CHECK(simble_shadow_is_managed_peripheral_manager(managedPeripheral),
+          "a registered peripheral manager is managed");
+    simble_hook_stats pStart = simble_get_hook_stats();
+    [managedPeripheral addService:service];
+    simble_hook_stats pManaged = simble_get_hook_stats();
+    CHECK(pManaged.add_service == pStart.add_service + 1, "a managed addService counts as routed");
+
     simble_uninstall_hooks();
     simble_shadow_reset();
   }

@@ -293,6 +293,90 @@ simble_status simble_client_read_rssi(const uint8_t *peripheral_id, size_t perip
   return do_request(payload, n, out);
 }
 
+simble_status simble_client_add_service(const char *service, size_t service_len, int is_primary,
+                                        const char *const *char_uuids, const size_t *char_uuid_lens,
+                                        const uint64_t *properties, const uint64_t *permissions,
+                                        size_t char_count, simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[4096];
+  int n = simble_encode_add_service(token, sizeof(token), service, service_len, is_primary,
+                                    char_uuids, char_uuid_lens, properties, permissions, char_count,
+                                    payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_remove_service(const char *service, size_t service_len,
+                                           simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[256];
+  int n = simble_encode_remove_service(token, sizeof(token), service, service_len, payload,
+                                       sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_start_advertising(const char *local_name, size_t local_name_len,
+                                              const char *const *uuids, const size_t *uuid_lens,
+                                              size_t uuid_count, simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[1024];
+  int n = simble_encode_start_advertising(token, sizeof(token), local_name, local_name_len, uuids,
+                                          uuid_lens, uuid_count, payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_stop_advertising(simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[64];
+  // STOP_ADVERTISING is op 17, a token-only command.
+  int n = simble_encode_command(17, token, sizeof(token), payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_respond_read(uint64_t request_id, const uint8_t *value, size_t value_len,
+                                         uint64_t att_error, simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[2048];
+  int n = simble_encode_respond_read(token, sizeof(token), request_id, value, value_len, att_error,
+                                     payload, sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_respond_write(uint64_t request_id, uint64_t att_error,
+                                          simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[256];
+  int n = simble_encode_respond_write(token, sizeof(token), request_id, att_error, payload,
+                                      sizeof(payload));
+  return do_request(payload, n, out);
+}
+
+simble_status simble_client_update_value(const char *service, size_t service_len,
+                                         const char *characteristic, size_t char_len,
+                                         const uint8_t *value, size_t value_len,
+                                         const uint8_t *central_id, size_t central_len,
+                                         simble_response *out) {
+  uint8_t token[32];
+  if (read_token(token) != 0)
+    return SIMBLE_ERR_TRUNCATED;
+  uint8_t payload[2048];
+  int n = simble_encode_update_value(token, sizeof(token), service, service_len, characteristic,
+                                     char_len, value, value_len, central_id, central_len, payload,
+                                     sizeof(payload));
+  return do_request(payload, n, out);
+}
+
 simble_status simble_client_open(simble_conn *conn) {
   uint8_t token[32];
   if (read_token(token) != 0)

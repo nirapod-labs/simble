@@ -167,6 +167,133 @@ BOOL simble_shadow_resolve_characteristic(CBCharacteristic *characteristic, uint
                                           CBUUID *_Nullable *_Nonnull serviceUUID,
                                           CBUUID *_Nullable *_Nonnull characteristicUUID);
 
+/// A registered peripheral manager: the manager to pass back, its delegate, and the queue.
+@interface SimblePeripheralManagerEntry : NSObject
+/// The manager the guest created, weakly held, passed as the first delegate-callback argument.
+@property(nonatomic, weak, nullable) CBPeripheralManager *manager;
+/// The delegate the guest passed to initWithDelegate:queue:, weakly held as CoreBluetooth does.
+@property(nonatomic, weak, nullable) id<CBPeripheralManagerDelegate> delegate;
+/// The dispatch queue the guest gave its manager; nil means the main queue, as CoreBluetooth does.
+@property(nonatomic, strong, nullable) dispatch_queue_t queue;
+@end
+
+/**
+ * @brief Register a CBPeripheralManager the guest created while the interposer is active.
+ *
+ * @param[in] manager  The manager instance.
+ * @param[in] delegate The delegate it was created with, or nil.
+ * @param[in] queue    The dispatch queue it was created with, or nil for the main queue.
+ */
+void simble_shadow_register_peripheral_manager(CBPeripheralManager *manager,
+                                               id<CBPeripheralManagerDelegate> _Nullable delegate,
+                                               dispatch_queue_t _Nullable queue);
+
+/**
+ * @brief Whether a CBPeripheralManager is one the interposer manages.
+ *
+ * @param[in] manager The manager to test.
+ * @return YES if registered, NO otherwise.
+ */
+BOOL simble_shadow_is_managed_peripheral_manager(CBPeripheralManager *manager);
+
+/**
+ * @brief The sole registered peripheral manager, or nil if none is registered.
+ *
+ * The peripheral GATT database is process-wide, so events carry no manager and resolve to the one
+ * registered manager.
+ *
+ * @return The entry, or nil.
+ */
+SimblePeripheralManagerEntry *_Nullable simble_shadow_peripheral_manager_entry(void);
+
+/**
+ * @brief Record a CBMutableService and its characteristics, keyed by UUID.
+ *
+ * A later event carrying a service and characteristic UUID resolves back to the guest's own
+ * CBMutableCharacteristic through this record.
+ *
+ * @param[in] service The service the guest passed to addService:.
+ */
+void simble_shadow_track_service(CBMutableService *service);
+
+/**
+ * @brief Drop a tracked service and its characteristics.
+ *
+ * @param[in] serviceUUID The service UUID to drop.
+ */
+void simble_shadow_untrack_service(CBUUID *serviceUUID);
+
+/**
+ * @brief The UUID strings of every tracked service.
+ *
+ * @return A snapshot array of the tracked service UUID strings.
+ */
+NSArray<NSString *> *simble_shadow_tracked_service_uuids(void);
+
+/**
+ * @brief The tracked characteristic for a service and characteristic UUID, or nil.
+ *
+ * @param[in] serviceUUID        The service UUID.
+ * @param[in] characteristicUUID The characteristic UUID.
+ * @return The guest's CBMutableCharacteristic, or nil if it was never tracked.
+ */
+CBMutableCharacteristic *_Nullable simble_shadow_tracked_characteristic(CBUUID *serviceUUID,
+                                                                        CBUUID *characteristicUUID);
+
+/**
+ * @brief Mint or return the stand-in central for a host identifier.
+ *
+ * The first call for an identifier mints a CBCentral stand-in and records it; a later call for the
+ * same identifier returns the same stand-in.
+ *
+ * @param[in] centralId  The host central identifier bytes.
+ * @param[in] centralLen Length of @p centralId.
+ * @param[in] mtu        The central's maximumUpdateValueLength.
+ * @return The stand-in central, or nil if the identifier was empty.
+ */
+CBCentral *_Nullable simble_shadow_central(const uint8_t *centralId, size_t centralLen, size_t mtu);
+
+/**
+ * @brief Copy the host identifier bytes of a minted central.
+ *
+ * @param[in]  central The minted central.
+ * @param[out] out     Buffer the identifier is copied into.
+ * @param[in]  cap     Capacity of @p out.
+ * @param[out] outLen  Bytes written to @p out.
+ * @return YES on a hit, NO if @p central was not minted here or @p cap is too small.
+ */
+BOOL simble_shadow_central_id(CBCentral *central, uint8_t *out, size_t cap, size_t *outLen);
+
+/**
+ * @brief Mint a stand-in ATT request carrying its request id, characteristic, and central.
+ *
+ * The guest answers the request by calling respondToRequest:withResult: on the stand-in, which
+ * carries the request id back through ::simble_shadow_request_id.
+ *
+ * @param[in] requestId      The request id from the READ_REQUEST or WRITE_REQUEST event.
+ * @param[in] isWrite        Non-zero for a write request.
+ * @param[in] characteristic The guest's tracked characteristic for the request.
+ * @param[in] central        The stand-in central that originated the request.
+ * @param[in] offset         The ATT offset.
+ * @param[in] value          The write value bytes, or NULL for a read.
+ * @param[in] valueLen       Length of @p value; 0 for a read.
+ * @return The stand-in request.
+ */
+CBATTRequest *simble_shadow_att_request(uint64_t requestId, BOOL isWrite,
+                                        CBCharacteristic *_Nullable characteristic,
+                                        CBCentral *_Nullable central, NSUInteger offset,
+                                        const uint8_t *_Nullable value, size_t valueLen);
+
+/**
+ * @brief Resolve a minted ATT request to its request id and whether it was a write.
+ *
+ * @param[in]  request   The minted request.
+ * @param[out] requestId Set to the request id.
+ * @param[out] isWrite   Set to non-zero for a write request.
+ * @return YES on a hit, NO if @p request was not minted here.
+ */
+BOOL simble_shadow_request_id(CBATTRequest *request, uint64_t *requestId, BOOL *isWrite);
+
 /**
  * @brief Drop every registration.
  *
