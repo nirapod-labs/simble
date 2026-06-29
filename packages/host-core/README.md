@@ -7,5 +7,7 @@ SPDX-FileCopyrightText: 2026 Nirapod Labs
 
 The macOS CoreBluetooth service behind the helper.
 
-The scaffold exposes status metadata only. Scan, connect, GATT, and
-peripheral-server behavior are not implemented yet.
+It drives the Mac's adapter in both roles. As a central it scans, connects, discovers services and
+characteristics, reads, writes, sets notify, and reads RSSI. As a peripheral it publishes services,
+advertises, answers read and write requests, and pushes characteristic updates. Each role sits
+behind a backend protocol, run against a fake on a radio-less runner or the real radio on a Mac.

@@ -9,16 +9,18 @@ import SimBLEProtocol
 /// backend's unsolicited events to a sink the router installs, mapped to protocol
 /// events. The backend is injected, so tests run it against a fake with no radio.
 ///
-/// Only the central role is implemented here. A peripheral-role request reaches
-/// the router, not this service; the router answers it with a not-implemented
-/// failure.
+/// This service handles the central role. The router routes a peripheral-role request
+/// to the peripheral service instead.
 public final class CentralService: @unchecked Sendable {
   private let backend: CentralBackend
+  private let peripheralSupported: Bool
 
   /// Build the service over the backend it drives. The CLI helper injects the real
-  /// `CoreBluetoothCentral`; tests inject a fake.
-  public init(backend: CentralBackend) {
+  /// `CoreBluetoothCentral`; tests inject a fake. `peripheralSupported` reports whether
+  /// the peripheral bridge is wired, surfaced in `hostStatus`.
+  public init(backend: CentralBackend, peripheralSupported: Bool = false) {
     self.backend = backend
+    self.peripheralSupported = peripheralSupported
   }
 
   /// Forward backend events to `sink`, mapped to protocol events. The router sets this
@@ -31,11 +33,11 @@ public final class CentralService: @unchecked Sendable {
 
   /// The current host status, read straight from the backend's central manager state.
   /// `centralSupported` is true once the backend reaches `poweredOn`; `peripheralSupported`
-  /// is false; the peripheral role is not implemented in the central bridge.
+  /// reports the value the service was built with.
   public func hostStatus() -> HostStatus {
     let state = backend.managerState()
     return HostStatus(centralSupported: state == Wire.managerStatePoweredOn,
-                      peripheralSupported: false, centralState: state)
+                      peripheralSupported: peripheralSupported, centralState: state)
   }
 
   /// Drive `request` against the backend and produce its response. A backend failure

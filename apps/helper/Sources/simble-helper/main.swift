@@ -10,7 +10,7 @@ import SimBLEHostCore
   import Darwin
 #endif
 
-// The central bridge helper: own the Mac's Bluetooth central and answer GATT
+// The bridge helper: own the Mac's Bluetooth central and peripheral and answer GATT
 // operations over an authenticated loopback channel. It mints a per-session
 // capability token and gates every request on it, validated before the op is
 // interpreted. No key material crosses the wire. Constructing a CBCentralManager
@@ -30,8 +30,13 @@ guard CBManager.authorization == .allowedAlways else {
 
 let token = CapabilityToken()
 let central = CoreBluetoothCentral()
+let peripheral = CoreBluetoothPeripheral()
 let listener = LoopbackListener(
-  router: RequestRouter(service: CentralService(backend: central), gate: AuthGate(session: token))
+  router: RequestRouter(
+    service: CentralService(backend: central, peripheralSupported: true),
+    peripheralService: PeripheralService(backend: peripheral),
+    gate: AuthGate(session: token)
+  )
 )
 
 do {

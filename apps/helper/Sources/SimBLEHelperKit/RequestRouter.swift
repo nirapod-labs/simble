@@ -12,35 +12,38 @@ enum BridgeErrorCode {
   static let unauthorized: Int64 = -1
   /// A request whose bytes did not decode to a valid message.
   static let malformed: Int64 = -2
-  /// A peripheral-role op the central bridge does not implement.
-  static let notImplemented: Int64 = -3
 }
 
-/// Turns a request into a response by driving the central service, behind the
-/// capability-token gate, and streams the service's events to the connected client.
-/// One `CentralService` is shared across connections; the listener attaches a
-/// per-connection event sink for the duration of a connection.
+/// Turns a request into a response by driving the central service or the peripheral
+/// service, behind the capability-token gate, and streams both services' events to the
+/// connected client. One service of each role is shared across connections; the listener
+/// attaches a per-connection event sink for the duration of a connection.
 public final class RequestRouter: @unchecked Sendable {
   private let service: CentralService
+  private let peripheralService: PeripheralService
   private let gate: AuthGate
   private let sinkLock = NSLock()
   private var eventSink: (@Sendable (Event) -> Void)?
 
-  /// Build the router over the central service and the token gate. The router installs
-  /// the service's event sink once and forwards each event to the attached connection.
-  public init(service: CentralService, gate: AuthGate) {
+  /// Build the router over the central service, the peripheral service, and the token
+  /// gate. The router installs each service's event sink once and forwards every event
+  /// to the attached connection.
+  public init(service: CentralService, peripheralService: PeripheralService, gate: AuthGate) {
     self.service = service
+    self.peripheralService = peripheralService
     self.gate = gate
-    service.onEvent { [weak self] event in
+    let forward: @Sendable (Event) -> Void = { [weak self] event in
       guard let self else { return }
-      self.sinkLock.lock()
-      let sink = self.eventSink
-      self.sinkLock.unlock()
+      sinkLock.lock()
+      let sink = eventSink
+      sinkLock.unlock()
       sink?(event)
     }
+    service.onEvent(forward)
+    peripheralService.onEvent(forward)
   }
 
-  /// Route the central service's events to `sink` for the life of one connection. The
+  /// Route both services' events to `sink` for the life of one connection. The
   /// listener attaches before serving and detaches after.
   public func attachEventSink(_ sink: @escaping @Sendable (Event) -> Void) {
     sinkLock.lock()
@@ -71,11 +74,8 @@ public final class RequestRouter: @unchecked Sendable {
     } catch {
       return .failure(op: 0, code: BridgeErrorCode.malformed, message: String(describing: error))
     }
-    // A peripheral-role op is rejected at the router, not dispatched: the central bridge
-    // does not implement it in this version.
-    guard !Wire.isPeripheralRole(request) else {
-      return .failure(op: Wire.op(of: request), code: BridgeErrorCode.notImplemented,
-                      message: "peripheral role not implemented in the central bridge")
+    if Wire.isPeripheralRole(request) {
+      return peripheralService.handle(request)
     }
     return service.handle(request)
   }

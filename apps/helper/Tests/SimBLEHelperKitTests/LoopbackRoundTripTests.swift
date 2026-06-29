@@ -15,11 +15,13 @@ final class LoopbackRoundTripTests: XCTestCase {
   private let serviceUUID = "180D"
   private let charUUID = "2A37"
 
-  private func startListener(_ backend: FakeCentralBackend, token: CapabilityToken)
+  private func startListener(_ backend: FakeCentralBackend, token: CapabilityToken,
+                             peripheral: FakePeripheralBackend = FakePeripheralBackend())
     throws -> LoopbackListener
   {
     let listener = LoopbackListener(
       router: RequestRouter(service: CentralService(backend: backend),
+                            peripheralService: PeripheralService(backend: peripheral),
                             gate: AuthGate(session: token))
     )
     try listener.start()
@@ -142,14 +144,29 @@ final class LoopbackRoundTripTests: XCTestCase {
     XCTAssertEqual(code, BridgeErrorCode.unauthorized)
   }
 
-  func testPeripheralRoleOpIsRejectedOverLoopback() throws {
+  func testPeripheralRoleOpRoutesToThePeripheralService() throws {
     let token = CapabilityToken()
     let listener = try startListener(FakeCentralBackend(), token: token)
     defer { listener.stop() }
     let client = try LoopbackClient(port: listener.port)
-    guard case let .failure(_, code, _) = try client.send(.stopAdvertising, token: token) else {
-      return XCTFail("a peripheral-role op must come back not-implemented")
-    }
-    XCTAssertEqual(code, BridgeErrorCode.notImplemented)
+    XCTAssertEqual(try client.send(.stopAdvertising, token: token), .advertisingStopped)
+  }
+
+  func testPeripheralEventStreamsToTheClient() throws {
+    let token = CapabilityToken()
+    let peripheral = FakePeripheralBackend()
+    let listener = try startListener(FakeCentralBackend(), token: token, peripheral: peripheral)
+    defer { listener.stop() }
+    let client = try LoopbackClient(port: listener.port)
+
+    XCTAssertEqual(try client.send(
+      .startAdvertising(localName: "Sensor", serviceUUIDs: ["180D"]), token: token
+    ), .advertisingStarted)
+    peripheral.emit(.readRequest(requestId: 1, serviceUUID: serviceUUID,
+                                 characteristicUUID: charUUID, offset: 0, centralId: peripheralId))
+    XCTAssertEqual(try client.receiveEvent(), .readRequest(
+      requestId: 1, serviceUUID: serviceUUID, characteristicUUID: charUUID, offset: 0,
+      centralId: peripheralId
+    ))
   }
 }
