@@ -12,13 +12,15 @@ let package = Package(
     .executable(name: "simblectl", targets: ["simblectl"]),
   ],
   dependencies: [
-    .package(path: "../../packages/protocol/swift")
+    .package(path: "../../packages/protocol/swift"),
+    .package(path: "../../apps/helper"),
   ],
   targets: [
     .target(
       name: "SimBLECTLKit",
       dependencies: [
-        .product(name: "SimBLEProtocol", package: "swift")
+        .product(name: "SimBLEProtocol", package: "swift"),
+        .product(name: "SimBLEHelperKit", package: "helper"),
       ]
     ),
     .executableTarget(name: "simblectl", dependencies: ["SimBLECTLKit"]),
