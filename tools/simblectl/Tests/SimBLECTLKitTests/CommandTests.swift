@@ -99,12 +99,12 @@ final class CommandTests: XCTestCase {
   func testUnknownVerbReturnsUsageError() {
     let result = SimBLECTL.handle(arguments: ["simblectl", "bogus"])
     XCTAssertEqual(result.exitCode, 1)
-    XCTAssertEqual(result.output, #"{"error":"unknown command","commands":["version","sims","disarm"]}"#)
+    XCTAssertEqual(result.output, #"{"error":"unknown command","commands":["version","sims","disarm","status"]}"#)
   }
 
   func testNoVerbReturnsUsageError() {
     let result = SimBLECTL.handle(arguments: ["simblectl"])
     XCTAssertEqual(result.exitCode, 1)
-    XCTAssertEqual(result.output, #"{"error":"unknown command","commands":["version","sims","disarm"]}"#)
+    XCTAssertEqual(result.output, #"{"error":"unknown command","commands":["version","sims","disarm","status"]}"#)
   }
 }

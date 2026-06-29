@@ -13,6 +13,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../../packages/protocol/swift"),
+    .package(path: "../../packages/host-core"),
     .package(path: "../../apps/helper"),
   ],
   targets: [
@@ -24,6 +25,13 @@ let package = Package(
       ]
     ),
     .executableTarget(name: "simblectl", dependencies: ["SimBLECTLKit"]),
-    .testTarget(name: "SimBLECTLKitTests", dependencies: ["SimBLECTLKit"]),
+    .testTarget(
+      name: "SimBLECTLKitTests",
+      dependencies: [
+        "SimBLECTLKit",
+        .product(name: "SimBLEHostCore", package: "host-core"),
+        .product(name: "SimBLEHelperKit", package: "helper"),
+      ]
+    ),
   ]
 )

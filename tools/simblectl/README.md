@@ -13,3 +13,4 @@ stdout.
 - `version`: print the SimBLE protocol version.
 - `sims`: list the booted simulators and their platforms.
 - `disarm`: clear the injection environment on every booted simulator.
+- `status`: report whether the bridge is running, over a HELLO round-trip to the recorded helper.
