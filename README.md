@@ -13,6 +13,7 @@ SPDX-FileCopyrightText: 2026 Nirapod Labs
   <img alt="C" src="https://img.shields.io/badge/C-A8B9CC?style=flat-square&logo=c&logoColor=white">
   <img alt="Platforms: iOS and watchOS Simulators, macOS" src="https://img.shields.io/badge/Platforms-iOS_%C2%B7_watchOS_Sim_%C2%B7_macOS-lightgrey?style=flat-square&logo=apple&logoColor=white">
   <a href="https://github.com/nirapod-labs/simble/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/nirapod-labs/simble?style=flat-square&label=release&color=2563eb"></a>
+  <a href="https://nirapod-labs.github.io/simble/"><img alt="Documentation" src="https://img.shields.io/badge/docs-architecture-2563eb?style=flat-square"></a>
 </p>
 
 # SimBLE
