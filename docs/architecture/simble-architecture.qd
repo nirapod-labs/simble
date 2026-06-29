@@ -22,11 +22,10 @@
     protocol, the host bridge, the trust boundary, the custody verdict, and the safety fence that
     makes the tool unable to follow code into production.
 
-.box {Status} type:{warning}
-    This is the architecture specification for SimBLE v1.0.0. It describes the target design. The
-    repository is at scaffold stage; for what is implemented today, read `SECURITY.md` and the
-    package READMEs. Statements here describe how the tool is designed to behave, not a claim that
-    every part is built.
+.box {Status} type:{note}
+    This describes the SimBLE v1.0.0 architecture as built. The central and peripheral roles, the
+    wire protocol, the host bridge, the interposer, and the fence are implemented. `SECURITY.md`
+    states the threat model and the fence, and the package READMEs cover each component.
 
 .tableofcontents maxdepth:{2}
 

@@ -9,3 +9,4 @@ Each record captures one architectural decision: its context, the decision, and 
 Records are immutable once accepted; a later record supersedes an earlier one rather than editing it.
 
 - [0001: SimBLE bridge architecture](0001-simble-bridge-architecture.md)
+- [0002: SimBLE peripheral role](0002-peripheral-role.md)
