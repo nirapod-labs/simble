@@ -153,4 +153,17 @@ final class SimulatorArmingTests: XCTestCase {
     arming.disarm()
     XCTAssertNil(runner.value("IOS-BOOT", "DYLD_INSERT_LIBRARIES"))
   }
+
+  // MARK: scheme environment
+
+  func testSchemeEnvironmentComposesTheIOSSliceLines() {
+    let arming = SimulatorArming(runner: oneIOS(), locator: FixedLocator(paths: [.ios: iosSlice]))
+    XCTAssertEqual(arming.schemeEnvironment(port: 51234, token: "deadbeef"),
+                   "DYLD_INSERT_LIBRARIES=\(iosSlice)\nSIMBLE_PORT=51234\nSIMBLE_TOKEN=deadbeef")
+  }
+
+  func testSchemeEnvironmentIsNilWithoutAnIOSSlice() {
+    let arming = SimulatorArming(runner: oneIOS(), locator: FixedLocator(paths: [:]))
+    XCTAssertNil(arming.schemeEnvironment(port: 1, token: "ab"))
+  }
 }

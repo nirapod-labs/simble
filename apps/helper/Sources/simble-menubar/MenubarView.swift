@@ -9,12 +9,15 @@ import SwiftUI
 @available(macOS 14, *)
 struct MenubarView: View {
   @Bindable var model: HelperModel
+  @State private var copied = false
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
       Divider()
       status
+      copyButton
       Divider()
       simulators
       Divider()
@@ -25,7 +28,7 @@ struct MenubarView: View {
 
   private var header: some View {
     HStack {
-      Text(verbatim: "SimBLE").font(.headline)
+      SimBLEWordmark(size: 17)
       Spacer()
       Toggle("", isOn: Binding(get: { model.running }, set: { _ in model.toggle() }))
         .toggleStyle(.switch)
@@ -47,6 +50,29 @@ struct MenubarView: View {
     .padding(.horizontal, 12).padding(.vertical, 8)
   }
 
+  private var copyButton: some View {
+    Button {
+      if let env = model.schemeEnvironment() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(env, forType: .string)
+        withAnimation { copied = true }
+      }
+    } label: {
+      Label(copied ? "Copied" : "Copy scheme environment",
+            systemImage: copied ? "checkmark" : "doc.on.clipboard")
+        .frame(maxWidth: .infinity)
+    }
+    .controlSize(.large)
+    .disabled(!model.running)
+    .padding(.horizontal, 12).padding(.bottom, 10)
+    .task(id: copied) {
+      if copied {
+        try? await Task.sleep(for: .seconds(1.5))
+        withAnimation { copied = false }
+      }
+    }
+  }
+
   private var simulators: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Booted simulators").font(.caption).foregroundStyle(.secondary)
@@ -56,7 +82,8 @@ struct MenubarView: View {
       } else {
         ForEach(model.simulators) { sim in
           HStack(spacing: 10) {
-            Image(systemName: "iphone.gen3").foregroundStyle(.tint)
+            Image(systemName: sim.platform == "watchOS" ? "applewatch" : "iphone.gen3")
+              .foregroundStyle(.tint)
               .frame(width: 22, height: 22)
             Text(verbatim: sim.platform)
               .font(.caption.weight(.medium))
@@ -73,6 +100,9 @@ struct MenubarView: View {
 
   private var footer: some View {
     HStack(spacing: 0) {
+      Button("Settings…") { openSettings() }
+        .frame(maxWidth: .infinity)
+      Divider().frame(height: 16)
       Button("Quit") { model.shutdown(); NSApp.terminate(nil) }
         .frame(maxWidth: .infinity)
     }

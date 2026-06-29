@@ -36,5 +36,9 @@ struct SimBLEMenubarApp: App {
       Image(systemName: model.iconName)
     }
     .menuBarExtraStyle(.window)
+
+    Settings {
+      SettingsView(model: model)
+    }
   }
 }

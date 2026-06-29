@@ -173,6 +173,17 @@ public struct SimulatorArming: Sendable {
     }
   }
 
+  /// The debug-scheme environment for manual injection, one `KEY=value` per line: the iOS slice
+  /// insert path, the loopback port, and the capability token. Nil when no iOS slice is built.
+  public func schemeEnvironment(port: UInt16, token: String) -> String? {
+    guard let slice = locator.slicePath(for: .ios) else { return nil }
+    return [
+      "\(Self.injectVariable)=\(slice)",
+      "\(Self.portVariable)=\(port)",
+      "\(Self.tokenVariable)=\(token)",
+    ].joined(separator: "\n")
+  }
+
   /// Read one variable from a booted simulator's launchd environment, nil when unset.
   private func simulatorEnv(_ udid: String, _ key: String) -> String? {
     let output = runner.run(["spawn", udid, "launchctl", "getenv", key]).output
