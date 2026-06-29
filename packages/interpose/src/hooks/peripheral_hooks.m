@@ -25,6 +25,7 @@
 #import "simble_interpose.h"
 
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <objc/message.h>
 
 // Dispatch a block on the manager's queue, the main queue when it gave none.
 static void dispatchOnPeripheralQueue(SimblePeripheralManagerEntry *entry, dispatch_block_t block) {
@@ -295,6 +296,14 @@ static size_t buildCharacteristics(CBMutableService *service, NSMutableArray<NSS
   return st == SIMBLE_OK && resp.kind == SIMBLE_RESP_CONFIRMED;
 }
 
+// A managed peripheral manager reports poweredOn: the host serves only after its radio powers on,
+// so a reachable bridge means the host peripheral is powered on.
+- (CBManagerState)simble_peripheral_state {
+  if (simble_shadow_is_managed_peripheral_manager(self))
+    return CBManagerStatePoweredOn;
+  return [self simble_peripheral_state];
+}
+
 @end
 
 // --- Peripheral event delivery ---
@@ -383,9 +392,21 @@ void simble_deliver_peripheral_event(const simble_event *event) {
   }
 }
 
+// `state` is inherited from the shared CBManager superclass; this calls the superclass state,
+// installed on CBPeripheralManager so the swizzle stays on the peripheral class.
+static CBManagerState simble_peripheral_state_super(id self, SEL _cmd) {
+  (void)_cmd;
+  struct objc_super sup = {self, [CBPeripheralManager superclass]};
+  CBManagerState (*send)(struct objc_super *, SEL) =
+      (CBManagerState(*)(struct objc_super *, SEL))objc_msgSendSuper;
+  return send(&sup, @selector(state));
+}
+
 int simble_install_peripheral_hooks(void) {
   int failures = 0;
   Class managerClass = [CBPeripheralManager class];
+  class_addMethod(managerClass, @selector(state), (IMP)simble_peripheral_state_super, "q@:");
+  failures += simble_swizzle(managerClass, @selector(state), @selector(simble_peripheral_state));
   failures += simble_swizzle(managerClass, @selector(initWithDelegate:queue:),
                              @selector(simble_initWithDelegate:queue:));
   failures += simble_swizzle(managerClass, @selector(initWithDelegate:queue:options:),

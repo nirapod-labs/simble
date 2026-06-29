@@ -26,7 +26,7 @@ if(SIMBLE_SIM_SLICE)
   # The injectable dylib: the core plus the dyld load constructor. Each simulator platform gets
   # its own name; ios keeps the canonical simble-interpose, so the helper and scripts that load
   # it by that name need no change.
-  add_library(simble_interpose MODULE src/entry.c)
+  add_library(simble_interpose SHARED src/entry.c)
   target_include_directories(simble_interpose PRIVATE include)
   set_target_properties(
     simble_interpose

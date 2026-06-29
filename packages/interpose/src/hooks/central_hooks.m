@@ -25,6 +25,7 @@
 #import "simble_interpose.h"
 
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <objc/message.h>
 #import <objc/runtime.h>
 #import <pthread.h>
 
@@ -616,6 +617,17 @@ static size_t buildUUIDFilter(NSArray<CBUUID *> *uuids, NSMutableArray<NSString 
 
 @end
 
+// `state` is declared on the shared CBManager superclass, so swizzling it on CBCentralManager would
+// also intercept CBPeripheralManager and route a peripheral manager into the central state path.
+// This IMP calls the superclass state, installed on CBCentralManager so the swizzle stays there.
+static CBManagerState simble_central_state_super(id self, SEL _cmd) {
+  (void)_cmd;
+  struct objc_super sup = {self, [CBCentralManager superclass]};
+  CBManagerState (*send)(struct objc_super *, SEL) =
+      (CBManagerState(*)(struct objc_super *, SEL))objc_msgSendSuper;
+  return send(&sup, @selector(state));
+}
+
 int simble_install_hooks(void) {
   pthread_mutex_lock(&g_install_lock);
   if (g_installed) {
@@ -626,6 +638,7 @@ int simble_install_hooks(void) {
   Class managerClass = [CBCentralManager class];
   failures += simble_swizzle(managerClass, @selector(initWithDelegate:queue:),
                              @selector(simble_initWithDelegate:queue:));
+  class_addMethod(managerClass, @selector(state), (IMP)simble_central_state_super, "q@:");
   failures += simble_swizzle(managerClass, @selector(state), @selector(simble_state));
   failures += simble_swizzle(managerClass, @selector(scanForPeripheralsWithServices:options:),
                              @selector(simble_scanForPeripheralsWithServices:options:));

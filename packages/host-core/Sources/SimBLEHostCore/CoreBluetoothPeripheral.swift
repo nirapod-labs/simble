@@ -62,8 +62,14 @@ public final class CoreBluetoothPeripheral: NSObject, PeripheralBackend, @unchec
     }
     let latch = Latch<Void>()
     setAddServiceWaiter(latch, for: serviceUUID)
-    lock.lock(); services[serviceUUID] = service; lock.unlock()
-    queue.async { self.manager.add(service) }
+    // Replace any service already registered under this UUID so a guest relaunch against the
+    // long-lived manager leaves no duplicate primary service in the GATT database.
+    lock.lock(); let previous = services[serviceUUID]; services[serviceUUID] = service; lock
+      .unlock()
+    queue.async {
+      if let previous { self.manager.remove(previous) }
+      self.manager.add(service)
+    }
     _ = try wait(latch) { self.clearAddServiceWaiter(serviceUUID) }
   }
 
@@ -81,7 +87,12 @@ public final class CoreBluetoothPeripheral: NSObject, PeripheralBackend, @unchec
     }
     let latch = Latch<Void>()
     setAdvertisingWaiter(latch)
-    queue.async { self.manager.startAdvertising(data) }
+    // Restart so a repeat call replaces the live advertisement instead of failing with
+    // CBErrorAlreadyAdvertising.
+    queue.async {
+      if self.manager.isAdvertising { self.manager.stopAdvertising() }
+      self.manager.startAdvertising(data)
+    }
     _ = try wait(latch) { self.clearAdvertisingWaiter() }
   }
 
@@ -124,15 +135,34 @@ public final class CoreBluetoothPeripheral: NSObject, PeripheralBackend, @unchec
 
   private func characteristic(_ uuid: String, serviceUUID: String) throws -> CBMutableCharacteristic
   {
-    let service = try service(serviceUUID)
-    let target = CBUUID(string: uuid)
-    guard let characteristic = (service.characteristics as? [CBMutableCharacteristic])?
-      .first(where: { $0.uuid == target })
+    lock.lock(); let published = services; lock.unlock()
+    guard let characteristic = Self.resolveCharacteristic(uuid, serviceUUID: serviceUUID,
+                                                          in: published)
     else {
       throw PeripheralBackendError(code: Self.unknownAttribute,
                                    message: "characteristic not published")
     }
     return characteristic
+  }
+
+  /// The published characteristic with UUID `uuid`, searched in the service named by
+  /// `serviceUUID` first and then in every other published service. The fallback covers a
+  /// peripheral-created `CBMutableCharacteristic`, which carries no service back-reference.
+  static func resolveCharacteristic(_ uuid: String, serviceUUID: String,
+                                    in services: [String: CBMutableService])
+    -> CBMutableCharacteristic?
+  {
+    let target = CBUUID(string: uuid)
+    let ordered = [services[serviceUUID]].compactMap { $0 }
+      + services.values.filter { $0.uuid.uuidString != serviceUUID }
+    for service in ordered {
+      if let characteristic = (service.characteristics as? [CBMutableCharacteristic])?
+        .first(where: { $0.uuid == target })
+      {
+        return characteristic
+      }
+    }
+    return nil
   }
 
   private func subscribedCentrals(_ characteristic: CBMutableCharacteristic) -> [CBCentral] {
