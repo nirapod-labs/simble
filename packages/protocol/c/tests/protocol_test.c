@@ -152,6 +152,60 @@ int main(void) {
             memcmp(buf + 38, respond_write_tail, sizeof(respond_write_tail)) == 0,
         "respond_write parity");
 
+  // ADD_SERVICE: map(7) { 0:14, 7:token, 31:"180D", 44:props, 45:perms, 46:1, 51:["2A37","2A38"] };
+  // props and perms are packed byte strings, two-byte count then one eight-byte value each.
+  const char *add_uuids[] = {"2A37", "2A38"};
+  size_t add_uuid_lens[] = {4, 4};
+  uint64_t props[] = {0x10, 0x08};
+  uint64_t perms[] = {0x01, 0x02};
+  n = simble_encode_add_service(token, 32, "180D", 4, 1, add_uuids, add_uuid_lens, props, perms, 2,
+                                buf, sizeof(buf));
+  uint8_t add_tail[] = {0x18, 0x1F, 0x64, 0x31, 0x38, 0x30, 0x44, 0x18, 0x2C, 0x52, 0x00, 0x02,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x08, 0x18, 0x2D, 0x52, 0x00, 0x02, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x02, 0x18, 0x2E, 0x01, 0x18, 0x33, 0x82, 0x64, 0x32, 0x41, 0x33, 0x37,
+                        0x64, 0x32, 0x41, 0x33, 0x38};
+  CHECK(n == 103 && buf[0] == 0xA7 && buf[2] == 0x0E &&
+            memcmp(buf + 38, add_tail, sizeof(add_tail)) == 0,
+        "add_service parity");
+
+  // REMOVE_SERVICE: map(3) { 0:15, 7:token, 31:"180D" }.
+  n = simble_encode_remove_service(token, 32, "180D", 4, buf, sizeof(buf));
+  uint8_t remove_tail[] = {0x18, 0x1F, 0x64, 0x31, 0x38, 0x30, 0x44};
+  CHECK(n == 45 && buf[0] == 0xA3 && buf[2] == 0x0F &&
+            memcmp(buf + 38, remove_tail, sizeof(remove_tail)) == 0,
+        "remove_service parity");
+
+  // START_ADVERTISING with name and UUIDs: map(4) { 0:16, 7:token, 35:"Dev", 36:["180D"] }.
+  const char *adv_uuids[] = {"180D"};
+  size_t adv_uuid_lens[] = {4};
+  n = simble_encode_start_advertising(token, 32, "Dev", 3, adv_uuids, adv_uuid_lens, 1, buf,
+                                      sizeof(buf));
+  uint8_t advertise_tail[] = {0x18, 0x23, 0x63, 0x44, 0x65, 0x76,
+                              0x18, 0x24, 0x81, 0x64, 0x31, 0x38, 0x30, 0x44};
+  CHECK(n == 52 && buf[0] == 0xA4 && buf[2] == 0x10 &&
+            memcmp(buf + 38, advertise_tail, sizeof(advertise_tail)) == 0,
+        "start_advertising parity");
+
+  // START_ADVERTISING with neither name nor UUIDs is the token-only command shape with op 16.
+  n = simble_encode_start_advertising(token, 32, NULL, 0, NULL, NULL, 0, buf, sizeof(buf));
+  CHECK(n == 38 && buf[0] == 0xA2 && buf[2] == 0x10, "start_advertising bare");
+
+  // UPDATE_VALUE to one central: map(6) { 0:20, 7:token, 31:"180D", 32:"2A37", 33:value, 47:cid }.
+  uint8_t cid[2] = {0x09, 0x08};
+  n = simble_encode_update_value(token, 32, "180D", 4, "2A37", 4, val, 3, cid, 2, buf, sizeof(buf));
+  uint8_t update_tail[] = {0x18, 0x1F, 0x64, 0x31, 0x38, 0x30, 0x44, 0x18, 0x20, 0x64, 0x32,
+                           0x41, 0x33, 0x37, 0x18, 0x21, 0x43, 0xDE, 0xAD, 0xBE, 0x18, 0x2F,
+                           0x42, 0x09, 0x08};
+  CHECK(n == 63 && buf[0] == 0xA6 && buf[2] == 0x14 &&
+            memcmp(buf + 38, update_tail, sizeof(update_tail)) == 0,
+        "update_value parity");
+
+  // UPDATE_VALUE to every subscriber drops key 47: map(5).
+  n = simble_encode_update_value(token, 32, "180D", 4, "2A37", 4, val, 3, NULL, 0, buf, sizeof(buf));
+  CHECK(n == 58 && buf[0] == 0xA5 && buf[2] == 0x14, "update_value broadcast");
+
   // --- Decode responses the Swift codec emits. ---
   simble_response resp;
 
@@ -225,6 +279,21 @@ int main(void) {
   CHECK(simble_decode_response(resp_wrote, sizeof(resp_wrote), &resp) == SIMBLE_OK &&
             resp.kind == SIMBLE_RESP_CONFIRMED && resp.resp_op == 10,
         "decode wrote response");
+
+  uint8_t resp_service_added[] = {0xA3, 0x00, 0x0E, 0x01, 0x00, 0x18, 0x1F, 0x64, 0x31, 0x38,
+                                  0x30, 0x44};
+  CHECK(simble_decode_response(resp_service_added, sizeof(resp_service_added), &resp) == SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_SERVICE && resp.resp_op == 14 &&
+            strcmp(resp.service, "180D") == 0,
+        "decode service_added response");
+
+  uint8_t resp_service_removed[] = {0xA3, 0x00, 0x0F, 0x01, 0x00, 0x18, 0x1F, 0x64, 0x31, 0x38,
+                                    0x30, 0x44};
+  CHECK(simble_decode_response(resp_service_removed, sizeof(resp_service_removed), &resp) ==
+                SIMBLE_OK &&
+            resp.kind == SIMBLE_RESP_SERVICE && resp.resp_op == 15 &&
+            strcmp(resp.service, "180D") == 0,
+        "decode service_removed response");
 
   uint8_t resp_failure[] = {0xA4, 0x00, 0x05, 0x01, 0x01, 0x06, 0x62, 0x6E, 0x6F, 0x0A, 0x26};
   CHECK(simble_decode_response(resp_failure, sizeof(resp_failure), &resp) == SIMBLE_OK &&

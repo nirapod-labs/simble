@@ -59,6 +59,9 @@ typedef enum {
   SIMBLE_ERR_BUFFER,    ///< A field exceeds its fixed buffer in a decode struct.
 } simble_status;
 
+/** The most characteristics a single ADD_SERVICE request carries. */
+#define SIMBLE_MAX_CHARACTERISTICS 64
+
 /** How a central writes a characteristic, mirroring CBCharacteristicWriteType. */
 typedef enum {
   SIMBLE_WRITE_WITH_RESPONSE = 0,    ///< The write expects a host acknowledgement.
@@ -274,6 +277,89 @@ int simble_encode_respond_read(const uint8_t *token, size_t token_len, uint64_t 
 int simble_encode_respond_write(const uint8_t *token, size_t token_len, uint64_t request_id,
                                 uint64_t att_error, uint8_t *out, size_t cap);
 
+/**
+ * @brief Encode an ADD_SERVICE request.
+ *
+ * The characteristic UUIDs (key 51), properties (key 44), and permissions (key 45) are three
+ * parallel arrays of @p char_count entries, positionally aligned per characteristic. Properties
+ * and permissions are packed byte strings: a two-byte big-endian count then one eight-byte
+ * big-endian value each.
+ *
+ * @param[in]  token          32-byte capability token.
+ * @param[in]  token_len      Length of @p token.
+ * @param[in]  service        Service UUID, UTF-8 (key 31).
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  is_primary     Non-zero marks the service primary (key 46 = 1).
+ * @param[in]  char_uuids     Characteristic UUID strings (key 51).
+ * @param[in]  char_uuid_lens Per-UUID lengths, parallel to @p char_uuids.
+ * @param[in]  properties     Per-characteristic CBCharacteristicProperties (key 44).
+ * @param[in]  permissions    Per-characteristic CBAttributePermissions (key 45).
+ * @param[in]  char_count     Characteristic count; at most ::SIMBLE_MAX_CHARACTERISTICS.
+ * @param[out] out            Buffer the payload is written to.
+ * @param[in]  cap            Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small or @p char_count exceeds the limit.
+ */
+int simble_encode_add_service(const uint8_t *token, size_t token_len, const char *service,
+                              size_t service_len, int is_primary, const char *const *char_uuids,
+                              const size_t *char_uuid_lens, const uint64_t *properties,
+                              const uint64_t *permissions, size_t char_count, uint8_t *out,
+                              size_t cap);
+
+/**
+ * @brief Encode a REMOVE_SERVICE request.
+ *
+ * @param[in]  token       32-byte capability token.
+ * @param[in]  token_len   Length of @p token.
+ * @param[in]  service     Service UUID, UTF-8 (key 31).
+ * @param[in]  service_len Length of @p service.
+ * @param[out] out         Buffer the payload is written to.
+ * @param[in]  cap         Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small.
+ */
+int simble_encode_remove_service(const uint8_t *token, size_t token_len, const char *service,
+                                 size_t service_len, uint8_t *out, size_t cap);
+
+/**
+ * @brief Encode a START_ADVERTISING request.
+ *
+ * @param[in]  token          32-byte capability token.
+ * @param[in]  token_len      Length of @p token.
+ * @param[in]  local_name     Advertised local name, UTF-8 (key 35), or NULL.
+ * @param[in]  local_name_len Length of @p local_name; 0 omits key 35.
+ * @param[in]  uuids          Advertised service UUID strings (key 36), or NULL.
+ * @param[in]  uuid_lens      Per-UUID lengths, parallel to @p uuids.
+ * @param[in]  uuid_count     Number of UUIDs; 0 omits key 36.
+ * @param[out] out            Buffer the payload is written to.
+ * @param[in]  cap            Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small.
+ */
+int simble_encode_start_advertising(const uint8_t *token, size_t token_len, const char *local_name,
+                                    size_t local_name_len, const char *const *uuids,
+                                    const size_t *uuid_lens, size_t uuid_count, uint8_t *out,
+                                    size_t cap);
+
+/**
+ * @brief Encode an UPDATE_VALUE request.
+ *
+ * @param[in]  token          32-byte capability token.
+ * @param[in]  token_len      Length of @p token.
+ * @param[in]  service        Service UUID, UTF-8 (key 31).
+ * @param[in]  service_len    Length of @p service.
+ * @param[in]  characteristic Characteristic UUID, UTF-8 (key 32).
+ * @param[in]  char_len       Length of @p characteristic.
+ * @param[in]  value          New value bytes (key 33).
+ * @param[in]  value_len      Length of @p value.
+ * @param[in]  central_id     Target central id (key 47), or NULL to reach every subscriber.
+ * @param[in]  central_len    Length of @p central_id; 0 omits key 47.
+ * @param[out] out            Buffer the payload is written to.
+ * @param[in]  cap            Capacity of @p out.
+ * @return Bytes written, or -1 if @p cap is too small.
+ */
+int simble_encode_update_value(const uint8_t *token, size_t token_len, const char *service,
+                               size_t service_len, const char *characteristic, size_t char_len,
+                               const uint8_t *value, size_t value_len, const uint8_t *central_id,
+                               size_t central_len, uint8_t *out, size_t cap);
+
 /** Which response the helper sent, after ::simble_decode_response dispatches on op and status. */
 typedef enum {
   SIMBLE_RESP_HELLO,         ///< HELLO ok: version is set.
@@ -289,6 +375,7 @@ typedef enum {
   SIMBLE_RESP_SERVICES_DISCOVERED, ///< DISCOVER_SERVICES ok: peripheral and the uuids list are set.
   SIMBLE_RESP_CHARS_DISCOVERED, ///< DISCOVER_CHARACTERISTICS ok: peripheral, service, and the uuids
                                 ///< list are set.
+  SIMBLE_RESP_SERVICE,          ///< ADD_SERVICE / REMOVE_SERVICE ok: service is set.
   SIMBLE_RESP_ERROR,            ///< The helper returned an error: error and error_code are set.
 } simble_resp_kind;
 

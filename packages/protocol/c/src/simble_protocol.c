@@ -186,6 +186,23 @@ static void w_kv_text_array(writer *w, uint64_t key, const char *const *items, c
     w_bytes(w, CBOR_TEXT, (const uint8_t *)items[i], lens[i]);
 }
 
+// Write a uint key and a packed-uint byte string: a 2-byte big-endian count, then each value as 8
+// big-endian bytes.
+static void w_kv_packed_uints(writer *w, uint64_t key, const uint64_t *values, size_t count) {
+  uint8_t blob[2 + SIMBLE_MAX_CHARACTERISTICS * 8];
+  if (count > SIMBLE_MAX_CHARACTERISTICS) {
+    w->overflow = 1;
+    return;
+  }
+  size_t n = 0;
+  blob[n++] = (uint8_t)(count >> 8);
+  blob[n++] = (uint8_t)count;
+  for (size_t i = 0; i < count; i++)
+    for (int s = 56; s >= 0; s -= 8)
+      blob[n++] = (uint8_t)(values[i] >> s);
+  w_kv_bytes(w, key, blob, n);
+}
+
 int simble_encode_hello(const uint8_t *token, size_t token_len, uint64_t version,
                         const uint8_t *app_id, size_t app_id_len, const uint8_t *display_name,
                         size_t display_name_len, uint8_t *out, size_t cap) {
@@ -336,6 +353,67 @@ int simble_encode_respond_write(const uint8_t *token, size_t token_len, uint64_t
   w_kv_bytes(&w, K_TOKEN, token, token_len);
   w_kv_uint(&w, K_REQUEST_ID, request_id);
   w_kv_uint(&w, K_ATT_ERROR, att_error);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
+int simble_encode_add_service(const uint8_t *token, size_t token_len, const char *service,
+                              size_t service_len, int is_primary, const char *const *char_uuids,
+                              const size_t *char_uuid_lens, const uint64_t *properties,
+                              const uint64_t *permissions, size_t char_count, uint8_t *out,
+                              size_t cap) {
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 7);
+  w_kv_uint(&w, K_OP, OP_ADD_SERVICE);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  w_kv_text(&w, K_SERVICE, service, service_len);
+  w_kv_packed_uints(&w, K_CHAR_PROPERTIES, properties, char_count);
+  w_kv_packed_uints(&w, K_ATT_PERMISSIONS, permissions, char_count);
+  w_kv_uint(&w, K_IS_PRIMARY, is_primary ? 1 : 0);
+  w_kv_text_array(&w, K_CHARACTERISTIC_UUIDS, char_uuids, char_uuid_lens, char_count);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
+int simble_encode_remove_service(const uint8_t *token, size_t token_len, const char *service,
+                                 size_t service_len, uint8_t *out, size_t cap) {
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 3);
+  w_kv_uint(&w, K_OP, OP_REMOVE_SERVICE);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  w_kv_text(&w, K_SERVICE, service, service_len);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
+int simble_encode_start_advertising(const uint8_t *token, size_t token_len, const char *local_name,
+                                    size_t local_name_len, const char *const *uuids,
+                                    const size_t *uuid_lens, size_t uuid_count, uint8_t *out,
+                                    size_t cap) {
+  int has_name = local_name && local_name_len > 0;
+  int has_uuids = uuids && uuid_count > 0;
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 2 + has_name + has_uuids);
+  w_kv_uint(&w, K_OP, OP_START_ADVERTISING);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  if (has_name)
+    w_kv_text(&w, K_LOCAL_NAME, local_name, local_name_len);
+  if (has_uuids)
+    w_kv_text_array(&w, K_ADV_SERVICE_UUIDS, uuids, uuid_lens, uuid_count);
+  return w.overflow ? -1 : (int)w.pos;
+}
+
+int simble_encode_update_value(const uint8_t *token, size_t token_len, const char *service,
+                               size_t service_len, const char *characteristic, size_t char_len,
+                               const uint8_t *value, size_t value_len, const uint8_t *central_id,
+                               size_t central_len, uint8_t *out, size_t cap) {
+  int has_central = central_id && central_len > 0;
+  writer w = {out, cap, 0, 0};
+  w_head(&w, CBOR_MAP, 5 + has_central);
+  w_kv_uint(&w, K_OP, OP_UPDATE_VALUE);
+  w_kv_bytes(&w, K_TOKEN, token, token_len);
+  w_kv_text(&w, K_SERVICE, service, service_len);
+  w_kv_text(&w, K_CHARACTERISTIC, characteristic, char_len);
+  w_kv_bytes(&w, K_VALUE, value, value_len);
+  if (has_central)
+    w_kv_bytes(&w, K_CENTRAL, central_id, central_len);
   return w.overflow ? -1 : (int)w.pos;
 }
 
@@ -691,9 +769,11 @@ simble_status simble_decode_response(const uint8_t *payload, size_t len, simble_
     return copy_text_array(find(entries, count, K_CHARACTERISTIC_UUIDS), out->uuids,
                            SIMBLE_MAX_UUIDS, &out->uuid_count);
   }
+  case OP_ADD_SERVICE:
+  case OP_REMOVE_SERVICE:
+    out->kind = SIMBLE_RESP_SERVICE;
+    return copy_text(find(entries, count, K_SERVICE), out->service, sizeof(out->service));
   default:
-    // ADD_SERVICE / REMOVE_SERVICE carry a service field the interposer reads through a typed
-    // accessor, not this flat decoder. A caller that does not request them gets SIMBLE_ERR_OPCODE.
     return SIMBLE_ERR_OPCODE;
   }
 }
