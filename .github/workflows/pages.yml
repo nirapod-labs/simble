@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+#
+# Build the architecture document with Quarkdown and publish it to GitHub Pages as the project site.
+# Quarkdown ships a self-contained Linux build (bundled JRE), pinned by version and checksum here.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/architecture/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize deploys; a newer push supersedes an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      QD_VERSION: "2.2.0"
+      QD_SHA256: "810b885087cdb41e07279311c0b0fb141d86ac89adf1b18533623d3c4eb97836"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Quarkdown (pinned, checksum-verified)
+        run: |
+          url="https://github.com/iamgio/quarkdown/releases/download/v${QD_VERSION}/quarkdown-linux-x64.zip"
+          curl -fsSL "$url" -o quarkdown.zip
+          echo "${QD_SHA256}  quarkdown.zip" | sha256sum -c -
+          unzip -q quarkdown.zip -d qd
+
+      - name: Build the document
+        run: ./qd/quarkdown/bin/quarkdown c docs/architecture/simble-architecture.qd --strict --out build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/SimBLE-Architecture
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
