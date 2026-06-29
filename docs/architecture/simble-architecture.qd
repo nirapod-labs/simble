@@ -327,10 +327,10 @@ $$$
 
 CI runs the fence on every change. It asserts the static naming and wiring rules: that any scheme
 carrying the variable is Debug-only, that no Xcode project links the dylib into a build, and that the
-variable appears only in a reviewed allowlist. The fence also defines a binary bundle check, that
-every interposer the helper carries is a simulator slice and fails closed on any device platform; the
-release workflow runs it against the built `.app`, where it is a placeholder pending the full
-slice-platform assertion.
+variable appears only in a reviewed allowlist. The fence also runs a binary bundle check, that the
+helper carries exactly the interposers it injects and each is a simulator slice, reading the Mach-O
+build platform and failing closed on a missing slice or any device platform; the release workflow
+runs it against the built `.app` before publishing.
 
 .mermaid caption:{The fence as a decision: a load survives only the Simulator-and-debug path.}
     flowchart TD
