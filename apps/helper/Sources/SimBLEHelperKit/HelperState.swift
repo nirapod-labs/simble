@@ -61,6 +61,11 @@ public struct HelperState: Equatable, Sendable {
     return HelperState(port: port, token: token)
   }
 
+  /// The directory holding the state file, for a reveal-in-Finder action.
+  public static func directory() throws -> URL {
+    try fileURL().deletingLastPathComponent()
+  }
+
   /// Delete the state file, ignoring an absent file.
   public static func remove() {
     guard let url = try? fileURL() else { return }

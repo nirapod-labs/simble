@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Nirapod Labs
 
+import AppKit
 import Foundation
 import Observation
+import ServiceManagement
 import SimBLEHelperKit
 import SimBLEHostCore
 import SimBLEProtocol
@@ -47,6 +49,16 @@ final class HelperModel {
   private(set) var port: UInt16 = 0
   private(set) var simulators: [ArmedSimulator] = []
 
+  /// A pinned listener port, 0 for an automatic one. Editable in Settings; takes effect on the
+  /// next bridge start.
+  var fixedPort: Int = 0
+  /// When the bridge last started, for the Settings uptime readout.
+  private(set) var startedAt: Date?
+  /// Whether the helper is a macOS login item.
+  var launchAtLogin: Bool = false {
+    didSet { applyLaunchAtLogin() }
+  }
+
   private let central = CoreBluetoothCentral()
   private let peripheral = CoreBluetoothPeripheral()
   private let arming = SimulatorArming()
@@ -56,6 +68,9 @@ final class HelperModel {
   private var rearmTick = 0
 
   init() {
+    // A property set inside init does not fire its didSet, so reading the current login-item
+    // status here never re-registers it.
+    launchAtLogin = SMAppService.mainApp.status == .enabled
     // Constructing the managers above starts the CoreBluetooth stack, which triggers the
     // macOS Bluetooth prompt on first run. Poll the central state off the main run loop so
     // the menubar stays responsive while the radio reaches poweredOn; arm once it does.
@@ -87,6 +102,24 @@ final class HelperModel {
     case .unknown:
       "Starting Bluetooth"
     }
+  }
+
+  /// A short Bluetooth-state label for the Settings status tab.
+  var bluetoothLabel: String {
+    switch bluetooth {
+    case .poweredOn: "Ready"
+    case .unauthorized: "Not authorized"
+    case .unsupported: "Unsupported"
+    case .poweredOff: "Off"
+    case .unknown: "Starting"
+    }
+  }
+
+  /// A count of booted simulators and how many the bridge has armed.
+  var simulatorSummary: String {
+    if simulators.isEmpty { return "None booted" }
+    let armed = simulators.filter(\.armed).count
+    return "\(simulators.count) booted, \(armed) armed"
   }
 
   /// Whether the on/off control can act: only once the radio is authorized and on.
@@ -142,7 +175,9 @@ final class HelperModel {
       )
     )
     do {
-      let requested = ProcessInfo.processInfo.environment["SIMBLE_PORT"].flatMap { UInt16($0) } ?? 0
+      let pinned = fixedPort != 0 ? UInt16(exactly: fixedPort) : nil
+      let requested = pinned
+        ?? ProcessInfo.processInfo.environment["SIMBLE_PORT"].flatMap { UInt16($0) } ?? 0
       try listener.start(port: requested)
     } catch {
       return
@@ -151,6 +186,7 @@ final class HelperModel {
     self.listener = listener
     port = listener.port
     running = true
+    startedAt = Date()
     arming.armBooted(port: listener.port, token: token.hex)
     try? HelperState.write(port: listener.port, token: token.hex)
     refreshSimulators()
@@ -165,6 +201,7 @@ final class HelperModel {
     token = nil
     running = false
     port = 0
+    startedAt = nil
     refreshSimulators()
   }
 
@@ -181,6 +218,35 @@ final class HelperModel {
     let armable = running
     simulators = arming.bootedSimulators().map { sim in
       ArmedSimulator(id: sim.udid, platform: sim.platform.label, armed: armable)
+    }
+  }
+
+  /// The bundle's marketing version, "dev" outside a built `.app`.
+  var appVersion: String {
+    Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+  }
+
+  /// The debug-scheme environment for manual injection, nil when the bridge is off or no iOS
+  /// slice is built. The arming driver owns the composition and the injection keys.
+  func schemeEnvironment() -> String? {
+    guard running, let token else { return nil }
+    return arming.schemeEnvironment(port: port, token: token.hex)
+  }
+
+  /// Reveal the helper's data directory in Finder.
+  func openDataDirectory() {
+    guard let url = try? HelperState.directory() else { return }
+    try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    NSWorkspace.shared.open(url)
+  }
+
+  /// Register or unregister the helper as a login item.
+  private func applyLaunchAtLogin() {
+    do {
+      if launchAtLogin { try SMAppService.mainApp.register() }
+      else { try SMAppService.mainApp.unregister() }
+    } catch {
+      // A `swift run` outside a registered `.app` cannot set a login item.
     }
   }
 }
