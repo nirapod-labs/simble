@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+#
+# Cut by a tag push (scripts/release.sh). Builds the helper .app and the CLI from the tagged source,
+# gates them through the fence (static and bundle) and the Swift tests, packages a tag-pinned source
+# tarball, an ad-hoc .app zip, and SHA256SUMS, and publishes a GitHub Release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for the changelog and git archive
+
+      - name: Assert the tag matches VERSION
+        run: |
+          want="v$(cat VERSION)"
+          [ "$want" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match VERSION ($want)"; exit 1; }
+
+      - name: Build the helper .app and the CLI (ad-hoc signed)
+        run: |
+          bash scripts/build-menubar-app.sh
+          ( cd tools/simblectl && xcrun swift build -c release )
+          cp tools/simblectl/.build/release/simblectl dist/simblectl
+
+      - name: Fence gates (static, bundle, Swift tests)
+        run: |
+          bash scripts/fence-check.sh
+          bash scripts/fence-check.sh --helper dist/SimBLE.app
+          for p in packages/host-core packages/protocol/swift apps/helper tools/simblectl; do
+            echo "== swift test: $p =="
+            ( cd "$p" && xcrun swift test ) || exit 1
+          done
+
+      - name: Package (tag-pinned source tarball, app zip, checksums)
+        id: package
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          git archive --format=tar.gz --prefix="simble-$ver/" \
+            -o "out/simble-$ver.tar.gz" "$GITHUB_REF_NAME"
+          ditto -c -k --keepParent dist/SimBLE.app "out/SimBLE-$ver-macos.zip"
+          cat > out/CLEAR-QUARANTINE.txt <<'NOTE'
+          This .app is ad-hoc signed, not notarized. After unzipping, clear the download
+          quarantine so macOS will open it:
+
+            xattr -dr com.apple.quarantine SimBLE.app
+
+          Or build from source, which is never quarantined:
+
+            curl -fsSL https://raw.githubusercontent.com/nirapod-labs/simble/main/scripts/install.sh | sh
+          NOTE
+          ( cd out && shasum -a 256 ./* > SHA256SUMS )
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes from the commits since the last tag
+        run: |
+          prev="$(git tag --list 'v*' --sort=-v:refname | grep -vx "$GITHUB_REF_NAME" | head -1)"
+          {
+            echo "## SimBLE ${GITHUB_REF_NAME}"
+            echo
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s' "$prev..$GITHUB_REF_NAME"
+            else
+              git log --no-merges --pretty='- %s' "$GITHUB_REF_NAME"
+            fi
+            echo
+            echo "Install (builds from source):"
+            echo '```'
+            echo "curl -fsSL https://raw.githubusercontent.com/nirapod-labs/simble/main/scripts/install.sh | sh"
+            echo '```'
+            echo "The downloadable .app is ad-hoc signed; see CLEAR-QUARANTINE.txt to open it."
+          } > out/notes.md
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Prerelease tags (vX.Y.Z-...) publish as a prerelease, not the latest release.
+          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" $pre --title "SimBLE $GITHUB_REF_NAME" \
+            --notes-file out/notes.md \
+            out/simble-*.tar.gz out/SimBLE-*.zip out/SHA256SUMS out/CLEAR-QUARANTINE.txt

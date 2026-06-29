@@ -52,7 +52,8 @@ final class CommandTests: XCTestCase {
   }
 
   func testVersionCommandReturnsJson() {
-    XCTAssertEqual(SimBLECTL.handle(arguments: ["simblectl", "version"]).output, #"{"protocolVersion":1}"#)
+    XCTAssertEqual(SimBLECTL.handle(arguments: ["simblectl", "version"]).output,
+                   #"{"version":"\#(simblectlVersion)","protocolVersion":1}"#)
   }
 
   func testSimsListsBootedIosAndWatchAndExcludesShutdown() {
