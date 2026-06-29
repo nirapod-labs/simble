@@ -260,9 +260,8 @@ public enum Wire {
     }
   }
 
-  /// Whether `request` is a peripheral-role operation, the ops the central bridge
-  /// rejects with a not-implemented failure in this version (`addService` through
-  /// `updateValue`).
+  /// Whether `request` is a peripheral-role operation (`addService` through `updateValue`),
+  /// which the router sends to the peripheral service.
   public static func isPeripheralRole(_ request: Request) -> Bool {
     switch request {
     case .addService, .removeService, .startAdvertising, .stopAdvertising,

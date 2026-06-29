@@ -13,6 +13,7 @@ import XCTest
 final class RouterRobustnessTests: XCTestCase {
   private func router(session: CapabilityToken) -> RequestRouter {
     RequestRouter(service: CentralService(backend: FakeCentralBackend()),
+                  peripheralService: PeripheralService(backend: FakePeripheralBackend()),
                   gate: AuthGate(session: session))
   }
 
