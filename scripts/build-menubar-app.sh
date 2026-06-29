@@ -46,6 +46,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Bundle the interposers the helper injects, one per simulator platform. Each is a simulator-slice
+# binary the fence keeps out of any shipped app; the helper carries them and arms a booted simulator
+# with the slice matching its platform. Without these the installed helper finds no slice and arms
+# nothing. Build, copy, and sign each into Resources before the bundle is sealed.
+command -v cmake >/dev/null || { echo "cmake is required to build the interposers: brew install cmake"; exit 1; }
+echo "building the interposers (ios and watchos sim slices)..."
+( cd "$REPO" && make dylib ) || { echo "failed to build the interposers"; exit 1; }
+for slice in build-sim/bin/simble-interpose.dylib build-watchsim/bin/simble-interpose-watchos.dylib; do
+  [ -f "$REPO/$slice" ] || { echo "missing interposer slice: $slice (is the simulator SDK installed?)"; exit 1; }
+  name="$(basename "$slice")"
+  cp "$REPO/$slice" "$APP/Contents/Resources/$name"
+  codesign -s "$SIGN_ID" --force --timestamp=none "$APP/Contents/Resources/$name" >/dev/null 2>&1 \
+    || { echo "codesign failed for $name"; exit 1; }
+done
+
 # Ad-hoc sign the bundle so the Bluetooth grant attributes to a stable identity across runs.
 # --deep covers any nested code; --force replaces an existing signature.
 codesign --force --deep --sign "$SIGN_ID" "$APP" >/dev/null 2>&1 \

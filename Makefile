@@ -11,7 +11,7 @@ WATCH_TARGET := arm64-apple-watchos10.0-simulator
 SWIFT_PKGS   := packages/host-core packages/protocol/swift apps/helper tools/simblectl
 C_FILES      := $(shell find packages -type f \( -name '*.c' -o -name '*.h' \) 2>/dev/null)
 
-.PHONY: help bootstrap configure build app test test-portable fence docs lint format clean \
+.PHONY: help bootstrap configure build app dylib test test-portable fence docs lint format clean \
         mechanism-ios mechanism-watchos mechanism-peripheral-ios
 
 help: ## Show targets
@@ -41,6 +41,10 @@ build: configure ## Build C targets and Swift packages
 	@if [ -d build-sim ]; then cmake --build build-sim -j; fi
 	@if [ -d build-watchsim ]; then cmake --build build-watchsim -j; fi
 	@for p in $(SWIFT_PKGS); do echo "== swift build: $$p =="; ( cd $$p && xcrun swift build ) || exit 1; done
+
+dylib: configure ## Build the interposer simulator slices (ios and watchos)
+	@if [ -d build-sim ]; then cmake --build build-sim -j; fi
+	@if [ -d build-watchsim ]; then cmake --build build-watchsim -j; fi
 
 app: ## Build the menubar SimBLE.app bundle into dist/ (ad-hoc signed)
 	bash scripts/build-menubar-app.sh
