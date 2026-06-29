@@ -96,7 +96,9 @@ public enum SimBLECTL {
   ) -> CommandResult {
     switch arguments.dropFirst().first {
     case "version":
-      return CommandResult(exitCode: 0, output: #"{"protocolVersion":\#(SimBLEProtocol.version)}"#)
+      return CommandResult(
+        exitCode: 0,
+        output: #"{"version":"\#(simblectlVersion)","protocolVersion":\#(SimBLEProtocol.version)}"#)
     case "sims":
       return sims(arming)
     case "disarm":
