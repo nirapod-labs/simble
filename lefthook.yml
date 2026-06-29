@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Nirapod Labs
+
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{js,ts,tsx,json,jsonc}"
+      run: pnpm exec biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm exec commitlint --edit {1}
+
+# Branch protection also lives on the remote, but the gate is enforced locally
+# too. To bypass in a genuine emergency: git push --no-verify.
+pre-push:
+  commands:
+    no-direct-main:
+      run: |
+        branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo detached)"
+        if [ "$branch" = "main" ]; then
+          echo "Direct push to main is blocked. Branch, open a PR, let CI run."
+          exit 1
+        fi
