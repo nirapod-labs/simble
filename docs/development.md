@@ -30,5 +30,10 @@ make bootstrap
 | `make fence` | run static fence checks |
 | `make clean` | remove build outputs |
 
-Hardware mechanism targets are declared as placeholders and are not implemented
-yet.
+The `make mechanism-ios`, `make mechanism-watchos`, and `make
+mechanism-peripheral-ios` targets run the real in-simulator lanes: the
+interposer slice, injected into a guest app in a booted simulator, routes its
+CoreBluetooth calls through the helper to the Mac's radio. They are
+operator-run, not CI gates: each needs Xcode, a booted or bootable simulator,
+Bluetooth granted to the helper, and (for the central lanes) a BLE peer in
+range.
