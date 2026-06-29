@@ -434,6 +434,8 @@ typedef enum {
   SIMBLE_EVT_SUBSCRIBED,               ///< A central subscribed (peripheral role).
   SIMBLE_EVT_UNSUBSCRIBED,             ///< A central unsubscribed (peripheral role).
   SIMBLE_EVT_READY_TO_UPDATE,          ///< The transmit queue has room again (peripheral role).
+  SIMBLE_EVT_CONNECTED,                ///< A connect succeeded (central role).
+  SIMBLE_EVT_CONNECT_FAILED,           ///< A connect failed (central role).
 } simble_evt_kind;
 
 /**

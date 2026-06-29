@@ -23,7 +23,6 @@ public final class CoreBluetoothCentral: NSObject, CentralBackend, @unchecked Se
   /// Peripherals the manager has surfaced, keyed by identifier bytes; populated by a scan hit.
   private var peripherals: [Data: CBPeripheral] = [:]
   // Pending command latches keyed by a discriminator, signaled by the delegate callback.
-  private var connectWaiters: [Data: Latch<Void>] = [:]
   private var serviceWaiters: [Data: Latch<[String]>] = [:]
   private var characteristicWaiters: [CharKey: Latch<[String]>] = [:]
   private var readWaiters: [CharKey: Latch<Data>] = [:]
@@ -59,10 +58,9 @@ public final class CoreBluetoothCentral: NSObject, CentralBackend, @unchecked Se
 
   public func connect(peripheralId: Data) throws {
     let peripheral = try lookup(peripheralId)
-    let latch = Latch<Void>()
-    setConnectWaiter(latch, for: peripheralId)
+    // Real connect never blocks and has no timeout. This returns once the request is issued;
+    // didConnect or didFailToConnect emits the outcome as an event.
     queue.async { self.manager.connect(peripheral, options: nil) }
-    _ = try wait(latch) { self.clearConnectWaiter(peripheralId) }
   }
 
   public func disconnect(peripheralId: Data) throws {
@@ -250,14 +248,6 @@ private extension CoreBluetoothCentral {
   static let timeout: Int64 = 9 // CBError.connectionTimeout
   static let opFailed: Int64 = 1 // CBError.unknown
 
-  func setConnectWaiter(_ latch: Latch<Void>, for id: Data) {
-    lock.lock(); connectWaiters[id] = latch; lock.unlock()
-  }
-
-  func clearConnectWaiter(_ id: Data) {
-    lock.lock(); connectWaiters[id] = nil; lock.unlock()
-  }
-
   func setServiceWaiter(_ latch: Latch<[String]>, for id: Data) {
     lock.lock(); serviceWaiters[id] = latch; lock.unlock()
   }
@@ -328,14 +318,14 @@ extension CoreBluetoothCentral: CBCentralManagerDelegate {
 
   public func centralManager(_: CBCentralManager, didConnect peripheral: CBPeripheral) {
     peripheral.delegate = self
-    fulfillConnect(Self.identifier(of: peripheral), .success(()))
+    emit(.peripheralConnected(peripheralId: Self.identifier(of: peripheral)))
   }
 
   public func centralManager(_: CBCentralManager, didFailToConnect peripheral: CBPeripheral,
                              error: Error?)
   {
-    fulfillConnect(Self.identifier(of: peripheral),
-                   .failure(Self.backendError(error, fallback: "failed to connect")))
+    emit(.peripheralConnectFailed(peripheralId: Self.identifier(of: peripheral),
+                                  errorCode: error.map { Int64(($0 as NSError).code) }))
   }
 
   public func centralManager(_: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
@@ -432,11 +422,6 @@ private extension CoreBluetoothCentral {
       return CentralBackendError(code: opFailed, message: fallback)
     }
     return CentralBackendError(code: Int64(error.code), message: error.localizedDescription)
-  }
-
-  func fulfillConnect(_ id: Data, _ result: Result<Void, Error>) {
-    lock.lock(); let latch = connectWaiters[id]; lock.unlock()
-    latch?.fulfill(result)
   }
 
   func fulfillServices(_ id: Data, _ result: Result<[String], Error>) {

@@ -126,6 +126,10 @@ public final class CentralService: @unchecked Sendable {
                                   characteristicUUID: characteristicUUID, value: value)
     case let .peripheralDisconnected(peripheralId, errorCode):
       return .peripheralDisconnected(peripheralId: peripheralId, errorCode: errorCode)
+    case let .peripheralConnected(peripheralId):
+      return .peripheralConnected(peripheralId: peripheralId)
+    case let .peripheralConnectFailed(peripheralId, errorCode):
+      return .peripheralConnectFailed(peripheralId: peripheralId, errorCode: errorCode)
     case let .stateChanged(state):
       return .centralStateChanged(state: state)
     }

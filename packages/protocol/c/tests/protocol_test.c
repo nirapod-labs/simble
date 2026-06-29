@@ -334,6 +334,22 @@ int main(void) {
             evt.kind == SIMBLE_EVT_DISCONNECTED && !evt.has_error_code,
         "decode disconnected event without error");
 
+  uint8_t evt_connected[] = {0xA2, 0x00, 0x18, 0x8A, 0x18, 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04};
+  CHECK(simble_decode_event(evt_connected, sizeof(evt_connected), &evt) == SIMBLE_OK &&
+            evt.kind == SIMBLE_EVT_CONNECTED && evt.peripheral_len == 4,
+        "decode connected event");
+
+  uint8_t evt_conn_fail_err[] = {0xA3, 0x00, 0x18, 0x8B, 0x0A, 0x26, 0x18,
+                                 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04};
+  CHECK(simble_decode_event(evt_conn_fail_err, sizeof(evt_conn_fail_err), &evt) == SIMBLE_OK &&
+            evt.kind == SIMBLE_EVT_CONNECT_FAILED && evt.has_error_code && evt.error_code == -7,
+        "decode connect-failed event with error");
+
+  uint8_t evt_conn_fail_noerr[] = {0xA2, 0x00, 0x18, 0x8B, 0x18, 0x1E, 0x44, 0x01, 0x02, 0x03, 0x04};
+  CHECK(simble_decode_event(evt_conn_fail_noerr, sizeof(evt_conn_fail_noerr), &evt) == SIMBLE_OK &&
+            evt.kind == SIMBLE_EVT_CONNECT_FAILED && !evt.has_error_code,
+        "decode connect-failed event without error");
+
   uint8_t evt_central_changed[] = {0xA2, 0x00, 0x18, 0x83, 0x18, 0x29, 0x04};
   CHECK(simble_decode_event(evt_central_changed, sizeof(evt_central_changed), &evt) == SIMBLE_OK &&
             evt.kind == SIMBLE_EVT_CENTRAL_STATE_CHANGED && evt.manager_state == 4,

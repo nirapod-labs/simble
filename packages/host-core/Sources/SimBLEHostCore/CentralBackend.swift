@@ -17,6 +17,10 @@ public enum CentralBackendEvent: Equatable, Sendable {
   /// A peripheral disconnected unexpectedly; `errorCode` is the `CBError` raw value when one
   /// applied.
   case peripheralDisconnected(peripheralId: Data, errorCode: Int64?)
+  /// A connect succeeded; the connection is up.
+  case peripheralConnected(peripheralId: Data)
+  /// A connect failed; `errorCode` is the `CBError` raw value when one applied.
+  case peripheralConnectFailed(peripheralId: Data, errorCode: Int64?)
   /// The central manager's `CBManagerState` changed.
   case stateChanged(state: UInt64)
 }
@@ -38,8 +42,9 @@ public struct CentralBackendError: Error, Equatable, Sendable {
 
 /// The CoreBluetooth central operations the bridge drives, abstracted so the
 /// service runs against a fake on a radio-less runner and against the real radio
-/// on a Mac. Each command blocks until its CoreBluetooth delegate callback fires
-/// or the backend times out; unsolicited results arrive through the event sink.
+/// on a Mac. Most commands block until their CoreBluetooth delegate callback fires
+/// or the backend times out; connect returns once the request is issued, and its
+/// outcome arrives through the event sink. Unsolicited results arrive there too.
 ///
 /// The bridge moves GATT traffic only. No pairing secret, bonding record, or key
 /// material crosses this surface.
@@ -57,7 +62,8 @@ public protocol CentralBackend: AnyObject, Sendable {
   /// Stop scanning.
   func stopScan() throws
 
-  /// Connect to the peripheral named by its host identifier.
+  /// Connect to the peripheral named by its host identifier. Returns once the request is issued;
+  /// the outcome arrives as a `peripheralConnected` or `peripheralConnectFailed` event.
   func connect(peripheralId: Data) throws
 
   /// Cancel the connection to the named peripheral.

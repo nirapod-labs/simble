@@ -161,6 +161,19 @@ final class CentralServiceTests: XCTestCase {
     ])
   }
 
+  func testConnectOutcomeEventsSurface() {
+    let backend = FakeCentralBackend()
+    let service = CentralService(backend: backend)
+    let collector = EventCollector()
+    service.onEvent { collector.append($0) }
+    backend.emit(.peripheralConnected(peripheralId: peripheralId))
+    backend.emit(.peripheralConnectFailed(peripheralId: peripheralId, errorCode: 7))
+    XCTAssertEqual(collector.all, [
+      .peripheralConnected(peripheralId: peripheralId),
+      .peripheralConnectFailed(peripheralId: peripheralId, errorCode: 7),
+    ])
+  }
+
   func testBackendFailureBecomesAProtocolFailureWithTheDeviceCode() {
     let backend = FakeCentralBackend()
     backend.failWith = CentralBackendError(code: 4, message: "characteristic not discovered")

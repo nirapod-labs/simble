@@ -127,6 +127,33 @@ static void deliverEvent(CBCentralManager *manager, const simble_event *event) {
     });
     break;
   }
+  case SIMBLE_EVT_CONNECTED: {
+    CBPeripheral *peripheral =
+        simble_shadow_peripheral(manager, event->peripheral, event->peripheral_len);
+    dispatchOnManagerQueue(entry, ^{
+      id<CBCentralManagerDelegate> delegate = entry.delegate;
+      if ([delegate respondsToSelector:@selector(centralManager:didConnectPeripheral:)]) {
+        [delegate centralManager:manager didConnectPeripheral:peripheral];
+      }
+    });
+    break;
+  }
+  case SIMBLE_EVT_CONNECT_FAILED: {
+    CBPeripheral *peripheral =
+        simble_shadow_peripheral(manager, event->peripheral, event->peripheral_len);
+    NSError *error = event->has_error_code ? [NSError errorWithDomain:CBErrorDomain
+                                                                 code:event->error_code
+                                                             userInfo:nil]
+                                           : nil;
+    dispatchOnManagerQueue(entry, ^{
+      id<CBCentralManagerDelegate> delegate = entry.delegate;
+      if ([delegate
+              respondsToSelector:@selector(centralManager:didFailToConnectPeripheral:error:)]) {
+        [delegate centralManager:manager didFailToConnectPeripheral:peripheral error:error];
+      }
+    });
+    break;
+  }
   case SIMBLE_EVT_CENTRAL_STATE_CHANGED: {
     dispatchOnManagerQueue(entry, ^{
       id<CBCentralManagerDelegate> delegate = entry.delegate;
@@ -298,23 +325,14 @@ int simble_swizzle(Class cls, SEL original, SEL replacement) {
   size_t idLen = 0;
   if (!simble_shadow_peripheral_id(peripheral, pid, sizeof(pid), &idLen))
     return;
-  simble_response resp;
-  simble_status st = simble_client_connect(pid, idLen, &resp);
   g_stats.connect++;
-  SimbleManagerEntry *entry = simble_shadow_manager_entry(self);
-  CBCentralManager *manager = self;
-  dispatchOnManagerQueue(entry, ^{
-    id<CBCentralManagerDelegate> delegate = entry.delegate;
-    if (st == SIMBLE_OK && resp.kind == SIMBLE_RESP_PERIPHERAL) {
-      if ([delegate respondsToSelector:@selector(centralManager:didConnectPeripheral:)]) {
-        [delegate centralManager:manager didConnectPeripheral:peripheral];
-      }
-    } else if ([delegate
-                   respondsToSelector:@selector(
-                                          centralManager:didFailToConnectPeripheral:error:)]) {
-      NSError *error = [NSError errorWithDomain:CBErrorDomain code:resp.error_code userInfo:nil];
-      [delegate centralManager:manager didFailToConnectPeripheral:peripheral error:error];
-    }
+  // Real connect returns at once and never times out. The host acknowledges immediately and
+  // reports the outcome as a CONNECTED or CONNECT_FAILED event the reader turns into the
+  // delegate callback. The request goes off the caller thread, where a slow ack cannot block it.
+  NSData *pidData = [NSData dataWithBytes:pid length:idLen];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    simble_response resp;
+    simble_client_connect(pidData.bytes, pidData.length, &resp);
   });
 }
 
