@@ -58,14 +58,14 @@ fence: ## Run static fence checks
 docs: ## Generate C API docs and fail on warnings
 	doxygen Doxyfile
 
-mechanism-ios: ## Placeholder target (not implemented)
-	@echo "mechanism-ios is not implemented"
+mechanism-ios: ## Run the iOS central in-simulator lane (operator, needs Bluetooth and a BLE peer)
+	bash packages/interpose/tests/run-mechanism-central.sh ios
 
-mechanism-watchos: ## Placeholder target (not implemented)
-	@echo "mechanism-watchos is not implemented"
+mechanism-watchos: ## Run the watchOS central in-simulator lane (operator, needs Bluetooth and a BLE peer)
+	bash packages/interpose/tests/run-mechanism-central.sh watchos
 
-mechanism-peripheral-ios: ## Placeholder target (not implemented)
-	@echo "mechanism-peripheral-ios is not implemented"
+mechanism-peripheral-ios: ## Run the iOS peripheral in-simulator lane (operator, needs Bluetooth)
+	bash packages/interpose/tests/run-mechanism-peripheral-ios.sh
 
 lint: ## biome, swiftlint, and clang-tidy
 	pnpm exec biome check .

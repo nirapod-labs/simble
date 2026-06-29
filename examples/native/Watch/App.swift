@@ -77,6 +77,7 @@ final class CentralConsole: NSObject, @preconcurrency CBCentralManagerDelegate,
 
   private func append(_ text: String) {
     log.insert(ConsoleLine(text: text), at: 0)
+    FileHandle.standardError.write(Data("[simble-example] \(text)\n".utf8))
   }
 
   // MARK: CBCentralManagerDelegate

@@ -3,11 +3,20 @@
 
 name: ci-hardware
 
+# Manual only. The mechanism lane drives the Mac's real radio, so it needs a self-hosted macOS
+# runner with Bluetooth granted to the helper and a BLE peer in range. GitHub-hosted runners have
+# neither, so this never runs on push.
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   ble-hardware:
-    runs-on: ubuntu-latest
+    # Requires a self-hosted macOS runner with Bluetooth and a BLE peer.
+    runs-on: [self-hosted, macOS]
     steps:
-      - run: echo "Hardware BLE mechanism tests are not implemented yet."
+      - uses: actions/checkout@v4
+      - name: iOS central mechanism lane
+        run: make mechanism-ios

@@ -33,6 +33,7 @@ if(SIMBLE_SIM_SLICE)
     PROPERTIES
       PREFIX ""
       OUTPUT_NAME "${SIMBLE_INTERPOSE_OUTPUT}"
+      SUFFIX ".dylib"
   )
   target_link_libraries(simble_interpose PRIVATE interpose_core ${SIMBLE_FRAMEWORKS})
 else()
