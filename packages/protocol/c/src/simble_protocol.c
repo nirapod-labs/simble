@@ -94,6 +94,8 @@ enum {
   OP_EVT_SUBSCRIBED = 135,
   OP_EVT_UNSUBSCRIBED = 136,
   OP_EVT_READY_TO_UPDATE = 137,
+  OP_EVT_CONNECTED = 138,
+  OP_EVT_CONNECT_FAILED = 139,
   ST_OK = 0,
   ST_ERROR = 1
 };
@@ -838,6 +840,20 @@ simble_status simble_decode_event(const uint8_t *payload, size_t len, simble_eve
   }
   case OP_EVT_DISCONNECTED: {
     out->kind = SIMBLE_EVT_DISCONNECTED;
+    st = copy_bytes(find(entries, count, K_PERIPHERAL), out->peripheral, sizeof(out->peripheral),
+                    &out->peripheral_len);
+    if (st != SIMBLE_OK)
+      return st;
+    out->error_code = read_int(find(entries, count, K_ERR_CODE), &out->has_error_code);
+    return SIMBLE_OK;
+  }
+  case OP_EVT_CONNECTED: {
+    out->kind = SIMBLE_EVT_CONNECTED;
+    return copy_bytes(find(entries, count, K_PERIPHERAL), out->peripheral, sizeof(out->peripheral),
+                      &out->peripheral_len);
+  }
+  case OP_EVT_CONNECT_FAILED: {
+    out->kind = SIMBLE_EVT_CONNECT_FAILED;
     st = copy_bytes(find(entries, count, K_PERIPHERAL), out->peripheral, sizeof(out->peripheral),
                     &out->peripheral_len);
     if (st != SIMBLE_OK)

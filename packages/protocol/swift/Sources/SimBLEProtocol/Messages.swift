@@ -164,6 +164,10 @@ public enum Event: Equatable {
                            value: Data)
   /// A peripheral disconnected unexpectedly; `errorCode` is the `CBError` when one applied.
   case peripheralDisconnected(peripheralId: Data, errorCode: Int64?)
+  /// A connect succeeded (central role); the connection is up.
+  case peripheralConnected(peripheralId: Data)
+  /// A connect failed (central role); `errorCode` is the `CBError` when one applied.
+  case peripheralConnectFailed(peripheralId: Data, errorCode: Int64?)
   /// The host central manager's `CBManagerState` changed.
   case centralStateChanged(state: UInt64)
   /// The host peripheral manager's `CBManagerState` changed.
@@ -222,6 +226,8 @@ public enum Wire {
   static let opSubscribed: UInt64 = 135
   static let opUnsubscribed: UInt64 = 136
   static let opReadyToUpdate: UInt64 = 137
+  static let opConnectedEvent: UInt64 = 138
+  static let opConnectFailedEvent: UInt64 = 139
 
   static let statusOK: UInt64 = 0
   static let statusError: UInt64 = 1
@@ -828,6 +834,16 @@ public enum Wire {
       writer.uint(keyOp); writer.uint(opDisconnectedEvent)
       if let errorCode { writer.uint(keyErrorCode); writer.int(errorCode) }
       writer.uint(keyPeripheralId); writer.bytes(peripheralId)
+    case let .peripheralConnected(peripheralId):
+      writer.mapHeader(2)
+      writer.uint(keyOp); writer.uint(opConnectedEvent)
+      writer.uint(keyPeripheralId); writer.bytes(peripheralId)
+    case let .peripheralConnectFailed(peripheralId, errorCode):
+      // op, errorCode (10) when an error applied, peripheralId (30), keys ascending.
+      writer.mapHeader(errorCode != nil ? 3 : 2)
+      writer.uint(keyOp); writer.uint(opConnectFailedEvent)
+      if let errorCode { writer.uint(keyErrorCode); writer.int(errorCode) }
+      writer.uint(keyPeripheralId); writer.bytes(peripheralId)
     case let .centralStateChanged(state):
       writer.mapHeader(2)
       writer.uint(keyOp); writer.uint(opCentralStateChanged)
@@ -897,6 +913,11 @@ public enum Wire {
     case opDisconnectedEvent:
       return try .peripheralDisconnected(peripheralId: map.bytes(keyPeripheralId),
                                          errorCode: map.optionalInt(keyErrorCode))
+    case opConnectedEvent:
+      return try .peripheralConnected(peripheralId: map.bytes(keyPeripheralId))
+    case opConnectFailedEvent:
+      return try .peripheralConnectFailed(peripheralId: map.bytes(keyPeripheralId),
+                                          errorCode: map.optionalInt(keyErrorCode))
     case opCentralStateChanged:
       return try .centralStateChanged(state: map.uint(keyManagerState))
     case opPeripheralStateChanged:
