@@ -1,7 +1,7 @@
 {
   "name": "simble",
   "private": true,
-  "version": "1.0.0-beta",
+  "version": "1.0.0",
   "description": "Real Bluetooth Low Energy for the iOS and watchOS Simulators.",
   "author": "athexweb3",
   "license": "Apache-2.0",
