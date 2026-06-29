@@ -63,6 +63,8 @@ allowed() {
   case "$1" in
     scripts/fence-check.sh) return 0 ;;
     scripts/fence-selftest.sh) return 0 ;;
+    apps/helper/Sources/SimBLEHelperKit/SimulatorArming.swift) return 0 ;;
+    apps/helper/Tests/SimBLEHelperKitTests/SimulatorArmingTests.swift) return 0 ;;
     .github/workflows/*) return 0 ;;
     SECURITY.md | README.md | docs/* | docs/**/*) return 0 ;;
     *.xcscheme | *.xcconfig) return 0 ;;
