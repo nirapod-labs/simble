@@ -145,9 +145,9 @@ public final class LoopbackListener: @unchecked Sendable {
       defer { writeLock.unlock() }
       try? writeFrame(fd, Wire.encode(event))
     }
-    router.attachEventSink(emit)
+    let sinkID = router.attachEventSink(emit)
     defer {
-      router.detachEventSink()
+      router.detachEventSink(sinkID)
       close(fd)
     }
     while true {
