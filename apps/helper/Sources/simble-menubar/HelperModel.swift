@@ -53,6 +53,7 @@ final class HelperModel {
   private var listener: LoopbackListener?
   private var token: CapabilityToken?
   private var stateTimer: Timer?
+  private var rearmTick = 0
 
   init() {
     // Constructing the managers above starts the CoreBluetooth stack, which triggers the
@@ -110,7 +111,21 @@ final class HelperModel {
     }
     if running {
       refreshSimulators()
+      rearm()
     }
+  }
+
+  /// Re-arm booted simulators about every two seconds (every fourth 0.5s poll); a sim booted,
+  /// rebooted, or clobbered after bridge start recovers without a manual toggle. Idempotent; runs
+  /// off the main actor to keep the menubar responsive during the simctl spawns.
+  private func rearm() {
+    rearmTick += 1
+    guard rearmTick >= 4, let token else { return }
+    rearmTick = 0
+    let arming = self.arming
+    let port = self.port
+    let hex = token.hex
+    Task.detached { arming.armBooted(port: port, token: hex) }
   }
 
   /// Mint a token, start the loopback listener, arm the booted simulators, and write the

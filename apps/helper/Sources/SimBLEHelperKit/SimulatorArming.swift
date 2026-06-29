@@ -126,30 +126,56 @@ public struct SimulatorArming: Sendable {
   }
 
   /// Arm every booted simulator whose platform has a built slice. `port` is the loopback
-  /// listener's bound port; `token` is the session capability token in hex.
+  /// listener's bound port; `token` is the session capability token in hex. Idempotent: a re-arm
+  /// writes only a variable that has drifted; safe to call on a timer.
   public func armBooted(port: UInt16, token: String) {
     for sim in bootedSimulators() {
       guard let slice = locator.slicePath(for: sim.platform) else { continue }
-      let env = [
-        (Self.injectVariable, slice),
-        (Self.portVariable, String(port)),
-        (Self.tokenVariable, token),
-      ]
-      for (key, value) in env {
-        _ = runner.run(["spawn", sim.udid, "launchctl", "setenv", key, value])
-      }
+      arm(udid: sim.udid, slice: slice, port: port, token: token)
     }
   }
 
-  /// Unset the injection env on every booted simulator. Unsetting an unset variable is harmless,
-  /// so no per-sim arm-state is tracked.
-  public func disarm() {
-    let keys = [Self.injectVariable, Self.portVariable, Self.tokenVariable]
-    for sim in bootedSimulators() {
-      for key in keys {
-        _ = runner.run(["spawn", sim.udid, "launchctl", "unsetenv", key])
-      }
+  private func arm(udid: String, slice: String, port: UInt16, token: String) {
+    // Set port and token before the insert path. The interposer is inert without both (entry.c);
+    // inserting the slice first would yield an injected app that cannot reach the bridge.
+    if simulatorEnv(udid, Self.portVariable) != String(port) {
+      _ = runner.run(["spawn", udid, "launchctl", "setenv", Self.portVariable, String(port)])
     }
+    if simulatorEnv(udid, Self.tokenVariable) != token {
+      _ = runner.run(["spawn", udid, "launchctl", "setenv", Self.tokenVariable, token])
+    }
+    // DYLD_INSERT_LIBRARIES is shared; compose to keep a peer tool's entry (see InjectionEnv).
+    let current = simulatorEnv(udid, Self.injectVariable)
+    let composed = InjectionEnv.composed(current: current, adding: slice)
+    if composed != (current ?? "") {
+      _ = runner.run(["spawn", udid, "launchctl", "setenv", Self.injectVariable, composed])
+    }
+  }
+
+  /// Clear our injection from every booted simulator. Removes only our slice from the shared DYLD
+  /// list, never blanket-unsets it; a peer tool's interposer survives. Our own port and token
+  /// are ours to unset.
+  public func disarm() {
+    for sim in bootedSimulators() {
+      if let slice = locator.slicePath(for: sim.platform) {
+        let current = simulatorEnv(sim.udid, Self.injectVariable)
+        let remaining = InjectionEnv.removed(current: current, removing: slice)
+        if remaining.isEmpty {
+          _ = runner.run(["spawn", sim.udid, "launchctl", "unsetenv", Self.injectVariable])
+        } else if remaining != (current ?? "") {
+          _ = runner.run(["spawn", sim.udid, "launchctl", "setenv", Self.injectVariable, remaining])
+        }
+      }
+      _ = runner.run(["spawn", sim.udid, "launchctl", "unsetenv", Self.portVariable])
+      _ = runner.run(["spawn", sim.udid, "launchctl", "unsetenv", Self.tokenVariable])
+    }
+  }
+
+  /// Read one variable from a booted simulator's launchd environment, nil when unset.
+  private func simulatorEnv(_ udid: String, _ key: String) -> String? {
+    let output = runner.run(["spawn", udid, "launchctl", "getenv", key]).output
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
   }
 
   /// Every booted simulator paired with the platform its runtime maps to, parsed from
