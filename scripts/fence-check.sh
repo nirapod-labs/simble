@@ -32,8 +32,24 @@ fi
 if [ "${1:-}" = "--helper" ]; then
   BUNDLE="${2:-}"
   [ -d "$BUNDLE" ] || { echo "usage: fence-check.sh --helper <path.app>" >&2; exit 2; }
-  echo "FENCE (helper): placeholder ok"
-  exit 0
+  RES="$BUNDLE/Contents/Resources"
+  # The helper must carry exactly the interposers it injects, and each must be a simulator slice:
+  # a missing slice means the helper arms nothing; a device slice would defeat the fence. Read the
+  # Mach-O build platform and fail closed on anything that is not a *SIMULATOR platform.
+  for name in "${DYLIB_NAME}.dylib" "${DYLIB_NAME}-watchos.dylib"; do
+    slice="$RES/$name"
+    if [ ! -f "$slice" ]; then
+      fail "helper bundle carries no $name; it would arm nothing"
+      continue
+    fi
+    plat="$(vtool -show-build "$slice" 2>/dev/null | awk '/platform/ {print $2; exit}')"
+    case "$plat" in
+      *SIMULATOR) ;;
+      *) fail "$name is not a simulator slice (platform: ${plat:-unknown})" ;;
+    esac
+  done
+  [ "$FAIL" -eq 0 ] && echo "FENCE (helper): ok ($(basename "$BUNDLE") carries simulator-only interposers)"
+  exit "$FAIL"
 fi
 
 git ls-files '*.xcscheme' | while read -r scheme; do
