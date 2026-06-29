@@ -6,6 +6,10 @@ Files: .commitlintrc.json .tool-versions .xcode-version LICENSE VERSION biome.js
 Copyright: 2026 Nirapod Labs
 License: Apache-2.0
 
+Files: apps/helper/Sources/simble-helper/Info.plist
+Copyright: 2026 Nirapod Labs
+License: Apache-2.0
+
 Files: docs/architecture/simble-architecture.qd
 Copyright: 2026 Nirapod Labs
 License: Apache-2.0

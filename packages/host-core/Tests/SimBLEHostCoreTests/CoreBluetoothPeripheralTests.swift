@@ -68,4 +68,21 @@ final class CoreBluetoothPeripheralTests: XCTestCase {
       }
     }
   }
+
+  func testStartAdvertisingTwiceSucceeds() throws {
+    let peripheral = try poweredOnPeripheral()
+    XCTAssertNoThrow(try peripheral.startAdvertising(localName: "SimBLE", serviceUUIDs: nil))
+    // A repeat advertise replaces the live one rather than failing as already-advertising.
+    XCTAssertNoThrow(try peripheral.startAdvertising(localName: "SimBLE", serviceUUIDs: nil))
+  }
+
+  func testReAddingTheSameServiceSucceeds() throws {
+    let peripheral = try poweredOnPeripheral()
+    let spec = CharacteristicSpec(uuid: charUUID, properties: 0x12, permissions: 0x01)
+    XCTAssertNoThrow(try peripheral.addService(serviceUUID: serviceUUID, isPrimary: true,
+                                               characteristics: [spec]))
+    // A re-add replaces the prior registration rather than leaving a duplicate service.
+    XCTAssertNoThrow(try peripheral.addService(serviceUUID: serviceUUID, isPrimary: true,
+                                               characteristics: [spec]))
+  }
 }

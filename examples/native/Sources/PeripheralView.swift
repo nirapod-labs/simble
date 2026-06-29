@@ -4,18 +4,10 @@
 import CoreBluetooth
 import SwiftUI
 
-/// The iOS peripheral example: a CoreBluetooth peripheral that publishes one service with one
-/// readable and notifiable characteristic, advertises a local name, answers read requests with the
-/// current counter, and accepts writes. In the iOS Simulator armed by the SimBLE helper, the same
-/// calls reach the host Mac's radio; on a device they drive the device radio.
-@main
-struct SimBLEPeripheralApp: App {
-  var body: some Scene {
-    WindowGroup { ServerView() }
-  }
-}
+struct PeripheralView: View {
+  /// Start advertising automatically once the peripheral reaches poweredOn.
+  let autoAdvertise: Bool
 
-struct ServerView: View {
   @State private var server = PeripheralServer()
 
   var body: some View {
@@ -45,13 +37,8 @@ struct ServerView: View {
       }
       .navigationTitle("SimBLE Peripheral")
     }
+    .onAppear { server.autoAdvertise = autoAdvertise }
   }
-}
-
-/// One log line, identified for the list.
-struct LogLine: Identifiable {
-  let id = UUID()
-  let text: String
 }
 
 /// A CoreBluetooth peripheral: publish one service with one readable and notifiable characteristic,
@@ -69,6 +56,9 @@ final class PeripheralServer: NSObject, @preconcurrency CBPeripheralManagerDeleg
   private(set) var counter: UInt8 = 0
   private(set) var subscribers = 0
   private(set) var log: [LogLine] = []
+
+  /// When set, advertising starts on the first poweredOn state.
+  var autoAdvertise = false
 
   private var manager: CBPeripheralManager!
   private var characteristic: CBMutableCharacteristic!
@@ -123,7 +113,10 @@ final class PeripheralServer: NSObject, @preconcurrency CBPeripheralManagerDeleg
     state = describe(peripheral.state)
     poweredOn = peripheral.state == .poweredOn
     append("State: \(state)")
-    if peripheral.state == .poweredOn { publishService() }
+    if peripheral.state == .poweredOn {
+      publishService()
+      if autoAdvertise, !advertising { toggleAdvertise() }
+    }
   }
 
   func peripheralManager(
@@ -178,16 +171,5 @@ final class PeripheralServer: NSObject, @preconcurrency CBPeripheralManagerDeleg
   ) {
     subscribers = max(0, subscribers - 1)
     append("Central unsubscribed")
-  }
-
-  private func describe(_ state: CBManagerState) -> String {
-    switch state {
-    case .poweredOn: "Powered on"
-    case .poweredOff: "Powered off"
-    case .unauthorized: "Unauthorized"
-    case .unsupported: "Unsupported"
-    case .resetting: "Resetting"
-    default: "Unknown"
-    }
   }
 }

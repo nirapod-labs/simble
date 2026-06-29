@@ -142,6 +142,9 @@ __attribute__((constructor)) static void simble_shadow_init(void) {
   // registry's attached child list.
   class_addMethod(g_peripheralShadowClass, sel_registerName("services"), (IMP)shadowChildren,
                   "@@:");
+  // The stand-in peripheral answers its identifier from the meta.
+  class_addMethod(g_peripheralShadowClass, sel_registerName("identifier"), (IMP)shadowIdentifier,
+                  "@@:");
   class_addMethod(g_serviceShadowClass, sel_registerName("characteristics"), (IMP)shadowChildren,
                   "@@:");
   // The stand-in central answers its identifier and maximumUpdateValueLength from the meta.
@@ -269,6 +272,8 @@ CBPeripheral *simble_shadow_peripheral(CBCentralManager *manager, const uint8_t 
   CBPeripheral *minted = mintInstance(g_peripheralShadowClass);
   SimbleShadowMeta *meta = [SimbleShadowMeta new];
   meta.peripheralId = [NSData dataWithBytes:peripheralId length:peripheralLen];
+  if (peripheralLen == 16)
+    meta.identifier = [[NSUUID alloc] initWithUUIDBytes:peripheralId];
   meta.owner = manager;
   objc_setAssociatedObject(minted, kShadowMetaKey, meta, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   g_peripherals[key] = minted;

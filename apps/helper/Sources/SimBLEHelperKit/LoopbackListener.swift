@@ -19,11 +19,11 @@ import SimBLEProtocol
 /// but virtualizes its filesystem, so a host socket file is not reachable from a
 /// simulated app.
 public final class LoopbackListener: @unchecked Sendable {
-  /// Idle deadline on an accepted connection's reads and writes, so a peer that connects
-  /// and stalls cannot park a serve thread forever.
-  private static let connectionIdleTimeout = timeval(tv_sec: 30, tv_usec: 0)
-
   private let router: RequestRouter
+  /// Idle deadline on an accepted connection's socket reads and writes. A read deadline at a
+  /// frame boundary is tolerated so the event stream stays open; the write deadline still
+  /// bounds a stalled writer. Injectable so a test can force the deadline without waiting.
+  private let connectionIdleTimeout: timeval
   private let lifecycleLock = NSLock()
   private var listenFD: Int32 = -1
   private var worker: Thread?
@@ -34,8 +34,12 @@ public final class LoopbackListener: @unchecked Sendable {
   public private(set) var port: UInt16 = 0
 
   /// Build the listener around the router that answers each request and supplies events.
-  public init(router: RequestRouter) {
+  /// `idleTimeoutSeconds` bounds each connection's socket reads and writes.
+  public init(router: RequestRouter, idleTimeoutSeconds: TimeInterval = 30) {
     self.router = router
+    let whole = Int(idleTimeoutSeconds)
+    let micros = Int32((idleTimeoutSeconds - Double(whole)) * 1_000_000)
+    connectionIdleTimeout = timeval(tv_sec: whole, tv_usec: micros)
   }
 
   /// Bind, listen, and start accepting. Pass `0` to take an ephemeral port, then read the
@@ -108,7 +112,7 @@ public final class LoopbackListener: @unchecked Sendable {
         if isRunning() { continue }
         break
       }
-      var deadline = Self.connectionIdleTimeout
+      var deadline = connectionIdleTimeout
       setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
       setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &deadline, socklen_t(MemoryLayout<timeval>.size))
       let connection = Thread { [weak self] in
@@ -151,16 +155,23 @@ public final class LoopbackListener: @unchecked Sendable {
       close(fd)
     }
     while true {
+      let payload: Data
       do {
-        let response = try router.respond(toPayload: readFrame(fd))
-        writeLock.lock()
-        do { try writeFrame(fd, Wire.encode(response)) }
-        catch { writeLock.unlock(); return }
-        writeLock.unlock()
+        payload = try readFrame(fd)
+      } catch SocketError.idleTimeout {
+        // Idle event stream: no request this interval. Keep the sink attached so a
+        // long-lived peripheral still receives subscribe, read, and write events. The
+        // send deadline still guards a stalled writer.
+        continue
       } catch {
         // Peer closed, or a malformed frame: drop this connection.
         return
       }
+      let response = router.respond(toPayload: payload)
+      writeLock.lock()
+      do { try writeFrame(fd, Wire.encode(response)) }
+      catch { writeLock.unlock(); return }
+      writeLock.unlock()
     }
   }
 

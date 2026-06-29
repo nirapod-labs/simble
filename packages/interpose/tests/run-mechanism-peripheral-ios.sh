@@ -19,7 +19,7 @@
 #   1. Preconditions: Xcode, xcrun simctl, xcodegen.
 #   2. Build the iphonesimulator interposer slice, the helper, and simblectl.
 #   3. Pick or boot an iOS simulator.
-#   4. Build and install the peripheral example into it.
+#   4. Build and install the example into it.
 #   5. Start the helper; it arms the booted sim and writes its discovery record. Bail if Bluetooth
 #      is not authorized for the helper.
 #   6. Confirm the bridge over simblectl status.
@@ -35,8 +35,8 @@ cd "$REPO"
 
 TIMEOUT="${SIMBLE_TIMEOUT:-30}"
 BUILD_DIR="build-sim"
-SCHEME="SimBLEPeripheralExample"
-BUNDLE_ID="dev.simble.SimBLEPeripheralExample"
+SCHEME="SimBLEExample"
+BUNDLE_ID="dev.simble.SimBLEExample"
 SIM_SDK="iphonesimulator"
 DEST_PLATFORM="iOS Simulator"
 RUNTIME_TOKEN="iOS"
@@ -149,7 +149,7 @@ fi
 xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || true
 echo "using simulator $UDID"
 
-# Step 4: build and install the peripheral example.
+# Step 4: build and install the example.
 echo "== build and install example ($SCHEME) =="
 ( cd examples/native && xcodegen generate >/dev/null ) || fail "xcodegen generate failed."
 DERIVED="$WORKDIR/DerivedData"
@@ -193,9 +193,12 @@ echo "== confirm bridge =="
 "$SIMBLECTL" status | grep -q '"running":true' || fail "simblectl status did not report the bridge running."
 echo "bridge running"
 
-# Step 7: launch the guest and assert it engages advertising.
+# Step 7: launch the guest and assert it engages advertising. SIMCTL_CHILD_SIMBLE_AUTOADVERTISE
+# starts the peripheral advertising on poweredOn and SIMCTL_CHILD_SIMBLE_TAB opens the Peripheral
+# tab, so this needs no tap.
 echo "== launch guest and observe ($BUNDLE_ID) =="
-xcrun simctl launch --terminate-running-process --console-pty "$UDID" "$BUNDLE_ID" \
+SIMCTL_CHILD_SIMBLE_AUTOADVERTISE=1 SIMCTL_CHILD_SIMBLE_TAB=peripheral \
+  xcrun simctl launch --terminate-running-process --console-pty "$UDID" "$BUNDLE_ID" \
   >"$GUEST_LOG" 2>&1 &
 GUEST_PID=$!
 
@@ -208,4 +211,4 @@ fi
 
 echo "--- guest console ---" >&2
 grep '\[simble-example\]' "$GUEST_LOG" >&2 || true
-fail "advertising did not engage within ${TIMEOUT}s. The guest must start advertising (tap Advertise in the booted Simulator); check the helper has Bluetooth and the bridge is up."
+fail "advertising did not engage within ${TIMEOUT}s. The guest advertises on launch (SIMBLE_AUTOADVERTISE on the Peripheral tab); check the helper has Bluetooth and the bridge is up."

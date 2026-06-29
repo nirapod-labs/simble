@@ -14,6 +14,9 @@ import SimBLEProtocol
 enum SocketError: Error, Equatable {
   /// The peer closed mid-message; never surfaced as a partial read.
   case closed
+  /// A read deadline elapsed at a frame boundary, nothing pending. Benign for an idle
+  /// event-stream connection that legitimately sends no requests.
+  case idleTimeout
   /// An OS call failed; the message is the errno text.
   case system(String)
 }
@@ -53,8 +56,28 @@ func writeFull(_ fd: Int32, _ data: Data) throws {
 /// Read one length-prefixed frame and return its CBOR payload. A length past the 1 MiB
 /// cap is refused before any allocation.
 func readFrame(_ fd: Int32) throws -> Data {
-  let length = try Framing.payloadLength(readFull(fd, 4))
+  let length = try Framing.payloadLength(readHeader(fd))
   return try readFull(fd, length)
+}
+
+/// Read the 4-byte frame header. A read deadline with no header byte yet is `idleTimeout`,
+/// not a failure, so an idle event-stream connection survives. A timeout mid-header is real.
+func readHeader(_ fd: Int32) throws -> Data {
+  var buffer = Data(count: 4)
+  var read = 0
+  try buffer.withUnsafeMutableBytes { raw in
+    let base = raw.baseAddress!
+    while read < 4 {
+      let n = recv(fd, base + read, 4 - read, 0)
+      if n == 0 { throw SocketError.closed }
+      if n < 0 {
+        if read == 0, errno == EAGAIN || errno == EWOULDBLOCK { throw SocketError.idleTimeout }
+        throw SocketError.system(String(cString: strerror(errno)))
+      }
+      read += n
+    }
+  }
+  return buffer
 }
 
 /// Frame a CBOR payload and write it.

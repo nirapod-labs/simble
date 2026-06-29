@@ -211,9 +211,11 @@ echo "== confirm bridge =="
 "$SIMBLECTL" status | grep -q '"running":true' || fail "simblectl status did not report the bridge running."
 echo "bridge running"
 
-# Step 7: launch the guest and assert a discovery line.
+# Step 7: launch the guest and assert a discovery line. SIMCTL_CHILD_SIMBLE_AUTOSCAN starts the
+# central scanning on poweredOn, so this needs no tap.
 echo "== launch guest and observe ($BUNDLE_ID) =="
-xcrun simctl launch --terminate-running-process --console-pty "$UDID" "$BUNDLE_ID" \
+SIMCTL_CHILD_SIMBLE_AUTOSCAN=1 \
+  xcrun simctl launch --terminate-running-process --console-pty "$UDID" "$BUNDLE_ID" \
   >"$GUEST_LOG" 2>&1 &
 GUEST_PID=$!
 
@@ -225,4 +227,4 @@ fi
 
 echo "--- guest console ---" >&2
 grep '\[simble-example\]' "$GUEST_LOG" >&2 || true
-fail "no discovery within ${TIMEOUT}s. A real BLE peripheral must be advertising in range, and the guest must be scanning (tap Scan in the booted Simulator, or pair it with the peripheral lane)."
+fail "no discovery within ${TIMEOUT}s. A real BLE peripheral must be advertising in range, and the guest scans on launch (SIMBLE_AUTOSCAN), or pair it with the peripheral lane."
