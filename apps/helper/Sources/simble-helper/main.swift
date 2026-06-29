@@ -51,12 +51,17 @@ do {
 
 let arming = SimulatorArming()
 arming.armBooted(port: listener.port, token: token.hex)
-atexit { SimulatorArming().disarm() }
+try? HelperState.write(port: listener.port, token: token.hex)
+atexit {
+  SimulatorArming().disarm()
+  HelperState.remove()
+}
 let signalSources: [DispatchSourceSignal] = [SIGINT, SIGTERM].map { number in
   signal(number, SIG_IGN)
   let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
   source.setEventHandler {
     arming.disarm()
+    HelperState.remove()
     exit(0)
   }
   source.resume()
